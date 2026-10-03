@@ -1,0 +1,273 @@
+# =============================================================================
+# AI DASHCAM iOS - cấu hình duy nhất cho toàn bộ phần Python (dashcam_ml)
+# -----------------------------------------------------------------------------
+# - Mọi đường dẫn tương đối được tính từ THƯ MỤC CHỨA FILE NÀY.
+# - Không viết cứng ngưỡng trong code: sửa ở đây (CV13).
+# - Lệnh `python -m dashcam_ml export-ios-config` xuất các phần tracker/fcw/ldw
+#   ra JSON để app Swift dùng chung đúng một bộ ngưỡng [App iOS (sau pipeline)].
+# =============================================================================
+
+project:
+    name: AIDashCam
+    output_dir: outputs            # mọi kết quả chạy đều nằm dưới đây (không đưa vào Git)
+    seed: 42
+    device: auto                   # auto | cpu | 0 (GPU NVIDIA đầu tiên) | mps (Mac Apple Silicon)
+    log_level: INFO                # DEBUG | INFO | WARNING | ERROR
+
+# -----------------------------------------------------------------------------
+# Danh mục lớp đối tượng dùng cho logic cảnh báo.
+# - name / aliases: tên lớp chuẩn của dự án (giống bdd100k.class_names) và các tên khác của cùng lớp.
+#   COCO và BDD100K bản Dataset Ninja dùng "person", "motor", "bike"; dự án dùng "pedestrian",
+#   "motorcycle", "bicycle". Alias giúp so khớp trọng số COCO với tập nhãn BDD100K / VN khi đánh giá.
+# - reference_dimension + reference_size_m: kích thước thật để ước lượng khoảng cách
+#   bằng một camera (mô hình pinhole). Chỉ gần đúng, cần hiệu chỉnh khi chạy thật.
+# - Lớp không có trong danh sách (traffic light, sign...) bị bỏ qua khi cảnh báo.
+# -----------------------------------------------------------------------------
+classes:
+    - name: car
+      aliases: []
+      category: vehicle
+      reference_dimension: width
+      reference_size_m: 1.8
+    - name: truck
+      aliases: []
+      category: vehicle
+      reference_dimension: width
+      reference_size_m: 2.5
+    - name: bus
+      aliases: []
+      category: vehicle
+      reference_dimension: width
+      reference_size_m: 2.55
+    - name: motorcycle
+      aliases: [motor, motorbike]
+      category: two_wheeler
+      reference_dimension: width
+      reference_size_m: 0.8
+    - name: bicycle
+      aliases: [bike]
+      category: two_wheeler
+      reference_dimension: width
+      reference_size_m: 0.6
+    - name: pedestrian
+      aliases: [person]
+      category: pedestrian
+      reference_dimension: height
+      reference_size_m: 1.65
+    - name: rider
+      aliases: []
+      category: two_wheeler
+      reference_dimension: height
+      reference_size_m: 1.6
+
+# Camera sau của iPhone (ống chính ~26 mm). Quay 16:9 có góc ngang khoảng 60–65°.
+# Nên đo lại cho đúng máy/góc gắn thực tế.
+camera:
+    horizontal_fov_deg: 63.0
+
+# Tốc độ xe. Trên iPhone lấy từ GPS; khi chạy video trên máy tính thì giả lập.
+ego_speed:
+    source: constant               # constant | csv | none (none = không lọc theo tốc độ)
+    constant_kmh: 40.0
+    csv_path: null                 # CSV gồm 2 cột: timestamp_s,speed_kmh
+
+# =============================================================================
+# DỮ LIỆU
+# =============================================================================
+
+# CV02 - chuyển nhãn BDD100K sang định dạng YOLO
+bdd100k:
+    # Bản Dataset Ninja: bên trong có {train,val}/img/*.jpg và {train,val}/ann/*.jpg.json
+    dataset_root: data/bdd100k     # bản mẫu hay bản đầy đủ đều đặt ở đây; đổi dữ liệu = thay thư mục, không sửa config
+    output_dir: data/yolo_bdd100k
+    class_names: [pedestrian, rider, car, truck, bus, train, motorcycle, bicycle, traffic light, traffic sign]
+    category_aliases:              # tên lớp trong Dataset Ninja -> tên trong class_names; lớp khác (drivable area, lane) bị bỏ
+        person: pedestrian
+        bike: bicycle
+        motor: motorcycle
+    copy_mode: hardlink            # hardlink (không tốn ổ, cần cùng ổ đĩa; khác ổ thì tự copy) | copy
+    max_images_per_split: null     # ví dụ 500: chỉ đọc 500 file nhãn đầu (theo tên) mỗi split, để thử nhanh (CV01); null = dùng hết
+    condition_splits:              # tạo thêm tập val theo điều kiện khó (CV15)
+        night: {timeofday: night}
+        rainy: {weather: rainy}
+        daytime: {timeofday: daytime}
+
+# CV08 - trích khung hình từ video tự quay ở Việt Nam
+frame_extraction:
+    videos_dir: data/vn_videos
+    output_dir: data/vn_frames
+    video_extensions: [.mp4, .mov, .avi, .mkv]
+    every_n_seconds: 1.0
+    blur_threshold: 80.0           # phương sai Laplacian thấp hơn => ảnh mờ, bỏ
+    duplicate_threshold: 4.0       # chênh lệch trung bình (0-255) với ảnh trước thấp hơn => trùng, bỏ
+    jpeg_quality: 95
+    name_separator: "__"           # tên ảnh: <tên_video>__f000123.jpg (dùng khi chia tập)
+
+# CV09 - chia train/val/test THEO TỪNG VIDEO để không rò khung hình giữa các tập
+split:
+    images_dir: data/vn_labeled/images
+    labels_dir: data/vn_labeled/labels
+    output_dir: data/vn_split
+    class_names: [pedestrian, rider, car, truck, bus, train, motorcycle, bicycle, traffic light, traffic sign]
+    name_separator: "__"
+    copy_mode: hardlink
+    ratios:
+        train: 0.70
+        val: 0.15
+        test: 0.15
+
+# =============================================================================
+# HUẤN LUYỆN & ĐÁNH GIÁ (phương án A)
+# =============================================================================
+
+# CV12 - fine-tune YOLO. Tên chính thức (yolo11n.pt) sẽ được tự tải về.
+train:
+    model: weights/yolo11n.pt
+    data_yaml: data/yolo_bdd100k/dataset.yaml
+    epochs: 100
+    imgsz: 640
+    batch: 16
+    workers: 4
+    patience: 20
+    optimizer: auto
+    lr0: 0.01
+    cos_lr: false
+    amp: true
+    cache: false
+    resume: false
+    run_name: yolo11n_bdd100k
+
+# CV11 / CV10 - so sánh nhiều trọng số và nhiều kích thước ảnh trên cùng tập test
+evaluate:
+    weights:
+        - weights/yolo11n.pt
+        # - outputs/train/yolo11n_bdd100k/weights/best.pt
+    # Tạm chấm trên tập val BDD100K; khi có dữ liệu VN (CV09) đổi thành data/vn_split/dataset.yaml + split: test
+    data_yaml: data/yolo_bdd100k/dataset.yaml
+    split: val                     # key trong dataset.yaml: val (109 ảnh) | val_night | val_daytime | val_rainy | test
+    imgsz_list: [320, 416, 640]    # chạy thử nhanh: [320]
+    conf: 0.001
+    iou: 0.6
+    batch: 8                       # máy CPU; máy có GPU có thể tăng lên 16
+    focus_classes: [motorcycle]    # in riêng precision/recall của các lớp này
+    copy_mode: hardlink
+
+# =============================================================================
+# CHẠY VIDEO: detect + tracking + FCW (+ LDW)  (CV04, CV13)
+# =============================================================================
+
+inference:
+    weights: weights/yolo11n.pt
+    imgsz: 416                     # iPhone 8: 320–416; máy mới: 640
+    conf: 0.35
+    iou: 0.5
+    max_det: 50
+    precision: fp32                # fp32 | fp16 (fp16 cần GPU)
+
+video:
+    source: data/samples/dashcam.mp4
+    output_dir: outputs/video
+    ai_fps: 10.0                   # giả lập tốc độ AI trên iPhone 8 (mục tiêu 5–10 FPS)
+    max_seconds: null              # null = chạy hết video
+    save_video: true
+    save_events_json: true         # file JSON dùng làm dữ liệu test cho bản Swift [App iOS (sau pipeline)]
+    display: false                 # true = mở cửa sổ xem trực tiếp (bấm q để thoát)
+    output_codec: mp4v
+
+# Tracker IoU đơn giản, cố ý viết để dễ chuyển sang Swift
+tracker:
+    iou_threshold: 0.3
+    max_missed_frames: 5           # số khung AI liên tiếp mất dấu trước khi xoá track
+    min_hits: 3                    # track phải xuất hiện đủ số lần này mới được dùng
+    history_seconds: 1.5           # lịch sử kích thước khung để tính TTC
+
+# Cảnh báo va chạm phía trước (FCW)
+fcw:
+    enabled: true
+    in_path_roi:                   # hình thang làn xe đang chạy, toạ độ chuẩn hoá 0..1
+        center_x: 0.5
+        top_y: 0.45
+        bottom_y: 1.0
+        top_half_width: 0.06
+        bottom_half_width: 0.35
+    ttc_window_s: 1.0              # dùng các mẫu trong 1 s gần nhất để ước lượng TTC
+    ttc_min_samples: 4
+    ttc_smoothing_alpha: 0.5       # làm mượt EMA (1.0 = không làm mượt)
+    ttc_caution_s: 3.0             # TTC <= 3.0 s -> CAUTION
+    ttc_critical_s: 1.8            # TTC <= 1.8 s -> CRITICAL
+    headway_caution_s: 0.8         # khoảng cách thời gian tới xe trước <= 0.8 s -> CAUTION; null = tắt
+    max_distance_m: 60.0
+    min_ego_speed_kmh: 10.0        # dưới tốc độ này không cảnh báo (kẹt xe, đứng đèn đỏ)
+    min_consecutive_frames: 3      # chống nhấp nháy: cần N khung liên tiếp mới bật cảnh báo
+    cooldown_s: 5.0                # thời gian chờ giữa hai lần phát âm thanh cùng mức
+
+# =============================================================================
+# PHƯƠNG ÁN B: TwinLiteNet + cảnh báo lệch làn (LDW)
+# =============================================================================
+
+twinlitenet:
+    repo_dir: third_party/TwinLiteNet        # git clone repo của tác giả vào đây
+    module: model.TwinLite                   # file model/TwinLite.py trong repo
+    class_name: TwinLiteNet
+    weights: third_party/TwinLiteNet/pretrained/best.pth
+    state_dict_prefix: "module."             # trọng số lưu từ DataParallel
+    input_width: 640
+    input_height: 360
+    mask_threshold: 0.5
+
+ldw:
+    enabled: false                 # bật khi đã có TwinLiteNet
+    roi_top_y: 0.60                # chỉ xét phần dưới khung hình (gần xe)
+    roi_bottom_y: 0.95
+    row_step: 4                    # lấy mẫu mỗi 4 dòng pixel của mặt nạ
+    vehicle_center_x: 0.5          # vị trí tâm xe trên ảnh (chỉnh theo góc gắn điện thoại)
+    min_lane_width_ratio: 0.15
+    max_lane_width_ratio: 0.95
+    min_valid_rows_ratio: 0.3
+    departure_threshold: 0.6       # |độ lệch| / nửa bề rộng làn vượt ngưỡng => lệch làn
+    min_consecutive_frames: 5
+    cooldown_s: 5.0
+    min_ego_speed_kmh: 30.0
+
+# =============================================================================
+# CORE ML (CV14) - cần chạy trên macOS hoặc Linux (coremltools không hỗ trợ Windows)
+# =============================================================================
+
+coreml_export:
+    weights: weights/yolo11n.pt
+    output_dir: outputs/coreml
+    nms: true                      # gộp NMS vào mô hình => Vision trả về VNRecognizedObjectObservation
+    profiles:                      # precision: fp32 | fp16 | int8
+        - name: yolo11n_320_fp16
+          imgsz: 320
+          precision: fp16
+          target_devices: iPhone 8 (A11, chạy GPU)
+        - name: yolo11n_416_fp16
+          imgsz: 416
+          precision: fp16
+          target_devices: iPhone 8 (A11, chạy GPU)
+        - name: yolo11n_416_int8
+          imgsz: 416
+          precision: int8            # nén trọng số INT8
+          target_devices: iPhone 8 - thử nén trọng số INT8
+        - name: yolo11n_640_fp16
+          imgsz: 640
+          precision: fp16
+          target_devices: iPhone XR/XS trở lên (A12+, chạy ANE)
+
+twinlitenet_export:
+    output_dir: outputs/coreml
+    output_name: twinlitenet_640x360_fp16
+    precision: fp16               # fp32 | fp16 | int8
+
+coreml_verify:
+    pytorch_weights: weights/yolo11n.pt
+    images_dir: data/samples/images
+    max_images: 20
+    conf: 0.25
+    iou: 0.45
+    match_iou_threshold: 0.5
+    output_json: outputs/coreml/verify_report.json
+
+ios_config_export:
+    output_path: outputs/coreml/DashcamConfig.json

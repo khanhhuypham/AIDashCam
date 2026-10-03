@@ -1,0 +1,16 @@
+# Python 3.10 – 3.12
+# GPU NVIDIA: cài torch bản CUDA TRƯỚC theo https://pytorch.org/get-started/locally/
+ultralytics>=8.3.0
+torch>=2.2
+opencv-python>=4.9
+numpy>=1.26
+pyyaml>=6.0
+pydantic>=2.6
+tqdm>=4.66
+pillow>=10.0
+
+# Core ML: chỉ macOS / Linux (không có bản cho Windows)
+coremltools>=8.0; sys_platform != "win32"
+
+# Dev
+pytest>=8.0

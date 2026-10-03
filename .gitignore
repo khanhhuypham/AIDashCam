@@ -1,0 +1,21 @@
+# CV06: không đưa video, dữ liệu lớn, trọng số vào Git
+/data/
+/weights/
+/outputs/
+/third_party/
+/runs/
+*.pt
+*.pth
+*.onnx
+*.mlpackage/
+*.mlmodel
+*.mp4
+*.mov
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.idea/
