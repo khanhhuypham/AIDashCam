@@ -12,6 +12,9 @@
 *.mp4
 *.mov
 *.zip
+*.tar
+*.tar.gz
+*.tgz
 
 # Python
 __pycache__/
