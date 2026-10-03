@@ -177,7 +177,7 @@ python -m dashcam_ml train
 
 Trọng số tốt nhất nằm ở `outputs/train/<run_name>/weights/best.pt`. Thêm đường dẫn này vào `evaluate.weights` để so với mô hình nền.
 
-**Train trên Google Colab:** mở `colab_train.ipynb` trên Colab và làm theo ô đầu tiên của notebook. Notebook làm luôn bước đánh giá và xuất Core ML, kết quả lưu ở `MyDrive/AIDashCam/outputs/`.
+**Train trên Google Colab:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khanhhuypham/AIDashCam/blob/main/colab_train.ipynb), rồi làm theo ô đầu tiên của notebook. Notebook làm luôn bước đánh giá và xuất Core ML, kết quả lưu ở `MyDrive/AIDashCam/outputs/`.
 
 ### 3.5 Chạy logic cảnh báo trên video (CV04, CV13)
 
