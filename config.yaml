@@ -134,7 +134,7 @@ train:
     cos_lr: false
     amp: true
     cache: false
-    resume: true
+    resume: false
     run_name: yolo11n_bdd100k
 
 # CV11 / CV10 - so sánh nhiều trọng số và nhiều kích thước ảnh trên cùng tập test
