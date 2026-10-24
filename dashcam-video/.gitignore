@@ -1,0 +1,14 @@
+# Không đưa video, kết quả chạy, trọng số vào Git
+/data/
+/outputs/
+*.pt
+*.pth
+*.mp4
+*.mov
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.idea/

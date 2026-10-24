@@ -1,0 +1,155 @@
+# =============================================================================
+# AI DASHCAM - VIDEO: cấu hình duy nhất cho project chạy logic cảnh báo trên video
+# -----------------------------------------------------------------------------
+# - Mọi đường dẫn tương đối được tính từ THƯ MỤC CHỨA FILE NÀY.
+# - Mô hình đến từ project dashcam-train đặt cạnh (../dashcam-train): project này không train.
+# - Đây là nơi DUY NHẤT giữ ngưỡng cảnh báo. Lệnh `python -m dashcam_video export-ios-config`
+#   xuất các ngưỡng này ra DashcamConfig.json để app Swift dùng đúng một bộ ngưỡng.
+# =============================================================================
+
+project:
+    name: dashcam-video
+    device: auto                   # auto | cpu | 0 (GPU NVIDIA đầu tiên) | mps (Mac Apple Silicon)
+    log_level: INFO                # DEBUG | INFO | WARNING | ERROR
+
+# -----------------------------------------------------------------------------
+# Danh mục lớp đối tượng dùng cho logic cảnh báo.
+# - name / aliases: tên lớp mô hình trả về và các tên khác của cùng lớp
+#   (mô hình COCO gọi là "person", "motorbike"...).
+# - reference_dimension + reference_size_m: kích thước thật để ước lượng khoảng cách
+#   bằng một camera (mô hình pinhole). Chỉ gần đúng, cần hiệu chỉnh khi chạy thật.
+# - Lớp không có trong danh sách (traffic light, sign...) bị bỏ qua khi cảnh báo.
+# -----------------------------------------------------------------------------
+classes:
+    - name: car
+      aliases: []
+      category: vehicle
+      reference_dimension: width
+      reference_size_m: 1.8
+    - name: truck
+      aliases: []
+      category: vehicle
+      reference_dimension: width
+      reference_size_m: 2.5
+    - name: bus
+      aliases: []
+      category: vehicle
+      reference_dimension: width
+      reference_size_m: 2.55
+    - name: motorcycle
+      aliases: [motor, motorbike]
+      category: two_wheeler
+      reference_dimension: width
+      reference_size_m: 0.8
+    - name: bicycle
+      aliases: [bike]
+      category: two_wheeler
+      reference_dimension: width
+      reference_size_m: 0.6
+    - name: pedestrian
+      aliases: [person]
+      category: pedestrian
+      reference_dimension: height
+      reference_size_m: 1.65
+    - name: rider
+      aliases: []
+      category: two_wheeler
+      reference_dimension: height
+      reference_size_m: 1.6
+
+# Camera sau của iPhone (ống chính ~26 mm). Quay 16:9 có góc ngang khoảng 60–65°.
+# Nên đo lại cho đúng máy/góc gắn thực tế.
+camera:
+    horizontal_fov_deg: 63.0
+
+# Tốc độ xe. Trên iPhone lấy từ GPS; khi chạy video trên máy tính thì giả lập.
+ego_speed:
+    source: constant               # constant | csv | none (none = không lọc theo tốc độ)
+    constant_kmh: 40.0
+    csv_path: null                 # CSV gồm 2 cột: timestamp_s,speed_kmh
+
+# =============================================================================
+# CHẠY VIDEO: detect + tracking + FCW (+ LDW)  (CV04, CV13)
+# =============================================================================
+
+inference:
+    weights: ../dashcam-train/outputs/train/yolo11n_bdd100k/weights/best.pt   # mô hình đã train ở project dashcam-train
+    imgsz: 416                     # iPhone 8: 320–416; máy mới: 640
+    conf: 0.35
+    iou: 0.5
+    max_det: 50
+    precision: fp32                # fp32 | fp16 (fp16 cần GPU)
+
+video:
+    source: data/samples/dashcam.mp4
+    output_dir: outputs/video
+    ai_fps: 10.0                   # giả lập tốc độ AI trên iPhone 8 (mục tiêu 5–10 FPS)
+    max_seconds: null              # null = chạy hết video
+    save_video: true
+    save_events_json: true         # file JSON dùng làm dữ liệu test cho bản Swift
+    display: false                 # true = mở cửa sổ xem trực tiếp (bấm q để thoát)
+    output_codec: mp4v
+
+# Tracker IoU đơn giản, cố ý viết để dễ chuyển sang Swift
+tracker:
+    iou_threshold: 0.3
+    max_missed_frames: 5           # số khung AI liên tiếp mất dấu trước khi xoá track
+    min_hits: 3                    # track phải xuất hiện đủ số lần này mới được dùng
+    history_seconds: 1.5           # lịch sử kích thước khung để tính TTC
+
+# Cảnh báo va chạm phía trước (FCW)
+fcw:
+    enabled: true
+    in_path_roi:                   # hình thang làn xe đang chạy, toạ độ chuẩn hoá 0..1
+        center_x: 0.5
+        top_y: 0.45
+        bottom_y: 1.0
+        top_half_width: 0.06
+        bottom_half_width: 0.35
+    ttc_window_s: 1.0              # dùng các mẫu trong 1 s gần nhất để ước lượng TTC
+    ttc_min_samples: 4
+    ttc_smoothing_alpha: 0.5       # làm mượt EMA (1.0 = không làm mượt)
+    ttc_caution_s: 3.0             # TTC <= 3.0 s -> CAUTION
+    ttc_critical_s: 1.8            # TTC <= 1.8 s -> CRITICAL
+    headway_caution_s: 0.8         # khoảng cách thời gian tới xe trước <= 0.8 s -> CAUTION; null = tắt
+    max_distance_m: 60.0
+    min_ego_speed_kmh: 10.0        # dưới tốc độ này không cảnh báo (kẹt xe, đứng đèn đỏ)
+    min_consecutive_frames: 3      # chống nhấp nháy: cần N khung liên tiếp mới bật cảnh báo
+    cooldown_s: 5.0                # thời gian chờ giữa hai lần phát âm thanh cùng mức
+
+# =============================================================================
+# PHƯƠNG ÁN B: TwinLiteNet + cảnh báo lệch làn (LDW)
+# =============================================================================
+
+# Dùng chung repo TwinLiteNet đã clone trong project dashcam-train (project đó cần nó để xuất Core ML).
+twinlitenet:
+    repo_dir: ../dashcam-train/third_party/TwinLiteNet
+    module: model.TwinLite                   # file model/TwinLite.py trong repo
+    class_name: TwinLiteNet
+    weights: ../dashcam-train/third_party/TwinLiteNet/pretrained/best.pth
+    state_dict_prefix: "module."             # trọng số lưu từ DataParallel
+    input_width: 640
+    input_height: 360
+    mask_threshold: 0.5
+
+ldw:
+    enabled: false                 # bật khi đã có TwinLiteNet
+    roi_top_y: 0.60                # chỉ xét phần dưới khung hình (gần xe)
+    roi_bottom_y: 0.95
+    row_step: 4                    # lấy mẫu mỗi 4 dòng pixel của mặt nạ
+    vehicle_center_x: 0.5          # vị trí tâm xe trên ảnh (chỉnh theo góc gắn điện thoại)
+    min_lane_width_ratio: 0.15
+    max_lane_width_ratio: 0.95
+    min_valid_rows_ratio: 0.3
+    departure_threshold: 0.6       # |độ lệch| / nửa bề rộng làn vượt ngưỡng => lệch làn
+    min_consecutive_frames: 5
+    cooldown_s: 5.0
+    min_ego_speed_kmh: 30.0
+
+# =============================================================================
+# CONFIG CHO APP iOS
+# =============================================================================
+
+ios_config_export:
+    models_manifest: ../dashcam-train/outputs/coreml/manifest.json   # do `export-coreml` của dashcam-train tạo ra
+    output_path: outputs/ios/DashcamConfig.json
