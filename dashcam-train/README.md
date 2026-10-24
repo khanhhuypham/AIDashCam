@@ -204,7 +204,7 @@ python -m dashcam_ml train
 
 Trọng số tốt nhất nằm ở `outputs/train/<run_name>/weights/best.pt`. Đường dẫn này đã có trong `evaluate.weights` (để so với mô hình nền), `coreml_export.weights` và `coreml_verify.pytorch_weights`. Project dashcam-video cũng đọc thẳng file này để chạy video.
 
-**Train trên Google Colab:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khanhhuypham/AIDashCam/blob/main/colab_train.ipynb), rồi làm theo ô đầu tiên của notebook. Notebook làm luôn bước đánh giá và xuất Core ML, kết quả lưu ở `MyDrive/AIDashCam/outputs/`.
+**Train trên Google Colab:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khanhhuypham/AIDashCam/blob/main/dashcam-train/colab_train.ipynb), rồi làm theo ô đầu tiên của notebook. Notebook làm luôn bước đánh giá và xuất Core ML, kết quả lưu ở `MyDrive/AIDashCam/outputs/`.
 
 ### 3.5 Thử mô hình trên video
 

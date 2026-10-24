@@ -1,0 +1,3 @@
+# Mỗi project có .gitignore riêng (dashcam-train/, dashcam-video/)
+.idea/
+__pycache__/
