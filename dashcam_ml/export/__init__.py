@@ -1,1 +1,1 @@
-"""Export layer: Core ML conversion, manifest, verification and iOS config JSON."""
+"""Export layer: Core ML conversion, manifest and verification."""

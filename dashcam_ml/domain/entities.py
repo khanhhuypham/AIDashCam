@@ -1,14 +1,12 @@
-"""Framework-free value objects shared by every layer.
+"""Framework-free value objects used by the Core ML verification.
 
 All boxes use normalised image coordinates (0..1, origin top-left), the same
-convention as Apple Vision after flipping Y, so the logic ports to Swift 1:1.
+convention as Apple Vision after flipping Y.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-from dashcam_ml.domain.enums import AlertLevel, LaneDepartureSide
 
 JsonDict = dict[str, object]
 
@@ -67,61 +65,3 @@ class Detection:
 
     def to_dict(self) -> JsonDict:
         return {"box": self.box.to_dict(), "class_name": self.class_name, "confidence": round(self.confidence, 4)}
-
-
-@dataclass(frozen=True, slots=True)
-class FcwResult:
-    lead_track_id: int | None
-    distance_m: float | None
-    ttc_s: float | None
-    headway_s: float | None
-    raw_level: AlertLevel
-    active_level: AlertLevel
-    alert_triggered: bool
-
-    def to_dict(self) -> JsonDict:
-        return {
-            "lead_track_id": self.lead_track_id,
-            "distance_m": _round_optional(value=self.distance_m, digits=3),
-            "ttc_s": _round_optional(value=self.ttc_s, digits=3),
-            "headway_s": _round_optional(value=self.headway_s, digits=3),
-            "raw_level": self.raw_level.name,
-            "active_level": self.active_level.name,
-            "alert_triggered": self.alert_triggered,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class LanePosition:
-    lane_center_x: float
-    lane_width: float
-    offset_ratio: float
-    valid_rows_ratio: float
-
-    def to_dict(self) -> JsonDict:
-        return {
-            "lane_center_x": round(self.lane_center_x, 5),
-            "lane_width": round(self.lane_width, 5),
-            "offset_ratio": round(self.offset_ratio, 5),
-            "valid_rows_ratio": round(self.valid_rows_ratio, 5),
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class LdwResult:
-    lane_position: LanePosition | None
-    raw_side: LaneDepartureSide
-    active_side: LaneDepartureSide
-    alert_triggered: bool
-
-    def to_dict(self) -> JsonDict:
-        return {
-            "lane_position": self.lane_position.to_dict() if self.lane_position is not None else None,
-            "raw_side": self.raw_side.value,
-            "active_side": self.active_side.value,
-            "alert_triggered": self.alert_triggered,
-        }
-
-
-def _round_optional(*, value: float | None, digits: int) -> float | None:
-    return None if value is None else round(value, digits)

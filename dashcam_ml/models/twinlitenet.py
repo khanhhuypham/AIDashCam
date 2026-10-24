@@ -1,8 +1,8 @@
-"""TwinLiteNet loader, probability head and frame segmenter (phương án B).
+"""TwinLiteNet loader and probability head for the Core ML export (phương án B).
 
 The network definition lives in the authors' repository (cloned to
 ``twinlitenet.repo_dir``); this module imports it dynamically so no model code is
-copied into the project.
+copied into the project. Running it on video lives in the dashcam-video project.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ import torch
 from torch import nn
 
 from dashcam_ml.config.schema import TwinLiteNetConfig
-from dashcam_ml.core.ldw import LaneSegmentation
 
 BgrImage = npt.NDArray[np.uint8]
 LANE_CLASS_INDEX: int = 1
@@ -27,8 +26,8 @@ LANE_CLASS_INDEX: int = 1
 class TwinLiteNetProbabilityHead(nn.Module):
     """Wraps TwinLiteNet to output the foreground probability of both heads.
 
-    Output shapes are ``(1, H, W)``; used by the Python segmenter and by the Core ML
-    export so both produce identical tensors.
+    Output shapes are ``(1, H, W)``; used by the Core ML export and by ``verify-coreml``
+    so both produce identical tensors.
     """
 
     def __init__(self, *, backbone: nn.Module) -> None:
@@ -75,22 +74,3 @@ def preprocess_frame(*, frame_bgr: BgrImage, config: TwinLiteNetConfig) -> torch
     rgb: BgrImage = cv2.cvtColor(src=resized, code=cv2.COLOR_BGR2RGB)
     chw: npt.NDArray[np.float32] = np.ascontiguousarray(rgb.transpose(2, 0, 1), dtype=np.float32) / 255.0
     return torch.from_numpy(chw).unsqueeze(dim=0)
-
-
-class TwinLiteNetSegmenter:
-    def __init__(self, *, config: TwinLiteNetConfig, device: str) -> None:
-        self._config: TwinLiteNetConfig = config
-        self._device: torch.device = torch.device(device)
-        self._model: TwinLiteNetProbabilityHead = (
-            TwinLiteNetProbabilityHead(backbone=load_twinlitenet(config=config)).to(self._device).eval()
-        )
-
-    def segment(self, *, frame_bgr: BgrImage) -> LaneSegmentation:
-        tensor: torch.Tensor = preprocess_frame(frame_bgr=frame_bgr, config=self._config).to(self._device)
-        with torch.inference_mode():
-            drivable_prob, lane_prob = self._model(tensor)
-        threshold: float = self._config.mask_threshold
-        return LaneSegmentation(
-            drivable_mask=(drivable_prob[0] > threshold).cpu().numpy(),
-            lane_mask=(lane_prob[0] > threshold).cpu().numpy(),
-        )

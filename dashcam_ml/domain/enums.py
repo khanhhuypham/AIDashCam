@@ -6,7 +6,7 @@ Config values in ``config.yaml`` are parsed into these enums by pydantic, so a t
 
 from __future__ import annotations
 
-from enum import IntEnum, StrEnum
+from enum import StrEnum
 
 
 class LogLevel(StrEnum):
@@ -14,27 +14,6 @@ class LogLevel(StrEnum):
     INFO = "INFO"
     WARNING = "WARNING"
     ERROR = "ERROR"
-
-
-class ClassCategory(StrEnum):
-    """Road-user group used by the warning logic."""
-
-    VEHICLE = "vehicle"
-    TWO_WHEELER = "two_wheeler"
-    PEDESTRIAN = "pedestrian"
-
-
-class ReferenceDimension(StrEnum):
-    """Which side of the bounding box is compared with the real-world size."""
-
-    WIDTH = "width"
-    HEIGHT = "height"
-
-
-class EgoSpeedSource(StrEnum):
-    CONSTANT = "constant"
-    CSV = "csv"
-    NONE = "none"
 
 
 class CopyMode(StrEnum):
@@ -63,20 +42,6 @@ class DatasetSplit(StrEnum):
     TEST = "test"
 
 
-class AlertLevel(IntEnum):
-    """Ordered so that ``AlertLevel.CRITICAL > AlertLevel.CAUTION`` holds."""
-
-    NONE = 0
-    CAUTION = 1
-    CRITICAL = 2
-
-
-class LaneDepartureSide(StrEnum):
-    NONE = "none"
-    LEFT = "left"
-    RIGHT = "right"
-
-
 class ModelKind(StrEnum):
     """Role of an exported Core ML model inside the iOS app."""
 
@@ -98,8 +63,6 @@ class Command(StrEnum):
     SPLIT_DATASET = "split-dataset"
     TRAIN = "train"
     EVALUATE = "evaluate"
-    RUN_VIDEO = "run-video"
     EXPORT_COREML = "export-coreml"
     EXPORT_TWINLITENET = "export-twinlitenet"
     VERIFY_COREML = "verify-coreml"
-    EXPORT_IOS_CONFIG = "export-ios-config"

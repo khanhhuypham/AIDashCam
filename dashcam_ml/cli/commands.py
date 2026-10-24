@@ -3,15 +3,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Protocol
 
 from dashcam_ml.config.schema import DashcamConfig
 from dashcam_ml.core.class_catalog import ClassCatalog
 from dashcam_ml.domain.enums import Command
-from dashcam_ml.utils.logging_utils import get_logger
-
-LOGGER = get_logger(name=__name__)
 
 
 class CommandHandler(Protocol):
@@ -48,12 +44,6 @@ def evaluate(*, config: DashcamConfig) -> None:
     evaluate_detectors(config=config.evaluate, project=config.project, catalog=ClassCatalog(specs=config.classes))
 
 
-def run_video(*, config: DashcamConfig) -> None:
-    from dashcam_ml.pipeline.video_runner import run_video as run_pipeline
-
-    run_pipeline(config=config)
-
-
 def export_coreml(*, config: DashcamConfig) -> None:
     from dashcam_ml.export.yolo_coreml import export_yolo_coreml
 
@@ -76,24 +66,15 @@ def verify_coreml(*, config: DashcamConfig) -> None:
     )
 
 
-def export_ios_config(*, config: DashcamConfig) -> None:
-    from dashcam_ml.export.ios_config import export_ios_config as write_ios_config
-
-    output_path: Path = write_ios_config(config=config)
-    LOGGER.info("copy %s into the Xcode project", output_path.name)
-
-
 COMMAND_HANDLERS: dict[Command, CommandHandler] = {
     Command.PREPARE_BDD100K: prepare_bdd100k,
     Command.EXTRACT_FRAMES: extract_frames,
     Command.SPLIT_DATASET: split_dataset,
     Command.TRAIN: train,
     Command.EVALUATE: evaluate,
-    Command.RUN_VIDEO: run_video,
     Command.EXPORT_COREML: export_coreml,
     Command.EXPORT_TWINLITENET: export_twinlitenet,
     Command.VERIFY_COREML: verify_coreml,
-    Command.EXPORT_IOS_CONFIG: export_ios_config,
 }
 
 COMMAND_HELP: dict[Command, str] = {
@@ -102,9 +83,7 @@ COMMAND_HELP: dict[Command, str] = {
     Command.SPLIT_DATASET: "CV09: chia train/val/test theo từng video",
     Command.TRAIN: "CV12: fine-tune YOLO",
     Command.EVALUATE: "CV11: đánh giá nhiều trọng số x kích thước ảnh",
-    Command.RUN_VIDEO: "CV04/CV13: chạy detect + tracking + FCW (+ LDW) trên video",
     Command.EXPORT_COREML: "CV14: xuất YOLO sang Core ML theo các profile",
     Command.EXPORT_TWINLITENET: "CV14: xuất TwinLiteNet sang Core ML",
     Command.VERIFY_COREML: "CV14: so sánh Core ML với PyTorch (chỉ chạy trên macOS)",
-    Command.EXPORT_IOS_CONFIG: "App iOS (sau pipeline): xuất ngưỡng cảnh báo ra JSON cho app Swift",
 }

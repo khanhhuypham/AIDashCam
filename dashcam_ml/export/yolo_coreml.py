@@ -12,7 +12,7 @@ from pathlib import Path
 from dashcam_ml.config.schema import CoremlExportConfig, CoremlProfile, ImageSize
 from dashcam_ml.domain.enums import ModelKind
 from dashcam_ml.export.manifest import ModelManifestEntry, upsert_manifest
-from dashcam_ml.models.yolo_detector import to_ultralytics_imgsz, ultralytics_precision_kwargs
+from dashcam_ml.models.ultralytics_utils import to_ultralytics_imgsz, ultralytics_precision_kwargs
 from dashcam_ml.utils.files import remove_path
 from dashcam_ml.utils.logging_utils import get_logger
 from dashcam_ml.utils.runtime import require_coreml_conversion_platform

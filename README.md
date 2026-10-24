@@ -1,13 +1,21 @@
-# AI Dashcam iOS: phần Python (`dashcam_ml`)
+# AI Dashcam iOS: phần Python train mô hình (`dashcam_ml`)
 
-Code Python để **chuẩn bị dữ liệu, train/đánh giá, thử logic cảnh báo trên video và xuất mô hình Core ML** cho app dashcam iOS (máy tối thiểu iPhone 8, iOS 16).
+Code Python để **chuẩn bị dữ liệu, train/đánh giá và xuất mô hình Core ML** cho app dashcam iOS (máy tối thiểu iPhone 8, iOS 16).
+
+Phần **chạy logic cảnh báo trên video** (tracking, FCW, LDW) và **`DashcamConfig.json` cho app** nằm ở project riêng **dashcam-video**, đặt cạnh project này (`../dashcam-video`). Hai project chỉ trao đổi qua file:
+
+| File | Project này tạo | Ai dùng |
+|---|---|---|
+| `outputs/train/yolo11n_bdd100k/weights/best.pt` | `train` | dashcam-video (chạy video trên máy tính) |
+| `outputs/coreml/*.mlpackage` | `export-coreml` | app iOS |
+| `outputs/coreml/manifest.json` | `export-coreml` | dashcam-video (điền danh sách mô hình vào `DashcamConfig.json`) |
 
 Nội dung dựa trên file `Đồ_án_AI_Dashcam.xlsm`:
 
 | Phương án (sheet *So sánh đề tài*) | Trạng thái trong code |
 |---|---|
-| **A. Cảnh báo va chạm (FCW)**: YOLO11n | Đầy đủ: data, train, evaluate, tracking + TTC, xuất Core ML, kiểm tra |
-| **B. Cảnh báo lệch làn (LDW)**: TwinLiteNet | Logic LDW + chạy PyTorch + xuất Core ML (cần clone repo tác giả) |
+| **A. Cảnh báo va chạm (FCW)**: YOLO11n | Đầy đủ: data, train, evaluate, xuất Core ML, kiểm tra. Logic FCW ở dashcam-video |
+| **B. Cảnh báo lệch làn (LDW)**: TwinLiteNet | Xuất Core ML (cần clone repo tác giả). Logic LDW ở dashcam-video |
 | C. Đa nhiệm: YOLOP | Chưa làm (nặng nhất, rủi ro cao trên iPhone 8) |
 
 Các việc trong sheet *Công việc cần làm* mà code này làm được:
@@ -15,50 +23,69 @@ Các việc trong sheet *Công việc cần làm* mà code này làm được:
 | Việc | Lệnh |
 |---|---|
 | CV02 Tải và xem BDD100K | `prepare-bdd100k` |
-| CV04 Chạy thử trên video | `run-video` |
 | CV08 Trích khung hình, lọc ảnh mờ/trùng | `extract-frames` |
 | CV09 Chia dữ liệu theo từng video | `split-dataset` |
 | CV10/CV11 Đánh giá trọng số có sẵn, so kích thước ảnh | `evaluate` |
 | CV12 Fine-tune | `train` |
-| CV13 Logic cảnh báo bằng Python, ngưỡng để trong config | `run-video` + `config.yaml` |
 | CV14 Xuất Core ML và so với PyTorch | `export-coreml`, `export-twinlitenet`, `verify-coreml` |
-| App iOS (sau pipeline): dữ liệu JSON để test bản Swift | `run-video` (file `*_events.json`) + `export-ios-config` |
+| CV04, CV13, dữ liệu test cho bản Swift | ở project dashcam-video |
 
 ---
 
 ## 1. Kiến trúc
 
 ```
-AIDashCam/
-├── config.yaml                 # TOÀN BỘ cấu hình (đường dẫn, ngưỡng, profile export)
+dashcam-train/
+├── config.yaml                 # TOÀN BỘ cấu hình (đường dẫn, tham số train, profile export)
 ├── requirements.txt
 ├── dashcam_ml/
 │   ├── __main__.py             # python -m dashcam_ml <command>
 │   ├── domain/                 # (1) Không phụ thuộc thư viện ngoài
-│   │   ├── enums.py            #     mọi Enum: AlertLevel, LaneDepartureSide, CopyMode, WeightPrecision, Command...
-│   │   └── entities.py         #     BoundingBox, Detection, FcwResult, LdwResult...
+│   │   ├── enums.py            #     mọi Enum: CopyMode, WeightPrecision, ModelKind, Command...
+│   │   └── entities.py         #     BoundingBox, Detection (dùng khi so Core ML với PyTorch)
 │   ├── config/                 # (2) Schema pydantic cho config.yaml + loader
-│   ├── core/                   # (3) Logic cảnh báo, chỉ dùng numpy, dễ chuyển sang Swift
-│   │   ├── tracking.py         #     IouTracker
-│   │   ├── geometry.py         #     CameraModel, ước lượng khoảng cách, ROI làn xe
-│   │   ├── fcw.py              #     chọn xe dẫn đầu, TTC, mức cảnh báo
-│   │   ├── ldw.py              #     vị trí trong làn từ mặt nạ vạch làn
-│   │   ├── debounce.py         #     chống nhấp nháy + thời gian chờ (dùng chung FCW/LDW)
-│   │   ├── ego_speed.py        #     tốc độ xe (hằng số / CSV; GPS trên iPhone)
-│   │   └── class_catalog.py    #     tra lớp theo tên/alias
-│   ├── models/                 # (4) Adapter: Ultralytics YOLO, TwinLiteNet (torch)
+│   ├── core/                   # (3) class_catalog.py: tra lớp theo tên/alias
+│   ├── models/                 # (4) Ultralytics (tham số dùng chung), TwinLiteNet (torch)
 │   ├── data/                   # (4) BDD100K -> YOLO, trích khung hình, chia tập, remap lớp
 │   ├── training/               # (4) train, evaluate
-│   ├── export/                 # (4) Core ML, manifest, kiểm tra, JSON cho iOS
-│   ├── pipeline/               # (5) Ghép models + core chạy trên video, vẽ overlay
-│   ├── cli/                    # (6) argparse, mỗi Command một handler
+│   ├── export/                 # (4) Core ML, manifest, kiểm tra
+│   ├── cli/                    # (5) argparse, mỗi Command một handler
 │   └── utils/                  #     logging, file, device/platform
-└── tests/                      # pytest cho config + core + data
+├── docs/                       # kế hoạch, ghi chú
+└── tests/                      # pytest cho config + data
 ```
 
 Quy tắc phụ thuộc: tầng dưới không import tầng trên.
-`domain` ← `config` ← `core` ← `models / data / training / export` ← `pipeline` ← `cli`.
-Riêng `core/` không import torch, ultralytics hay OpenCV, nên mỗi file có thể viết lại 1-1 bằng Swift.
+`domain` ← `config` ← `core` ← `models / data / training / export` ← `cli`.
+
+### Bản đồ code: lệnh nào dùng code nào
+
+Mỗi lệnh có một handler trong `cli/commands.py`. Handler gọi đúng một hàm chính, nên muốn đọc lệnh nào thì mở file ở cột "Bắt đầu đọc từ".
+
+| Lệnh | Bắt đầu đọc từ | Code dùng thêm | Kết quả |
+|---|---|---|---|
+| `prepare-bdd100k` | `data/bdd100k.py` | `data/yolo_dataset.py` | `data/yolo_bdd100k/` |
+| `extract-frames` | `data/frame_extraction.py` | | `data/vn_frames/` |
+| `split-dataset` | `data/split.py` | `data/yolo_dataset.py` | `data/vn_split/` |
+| `train` | `training/trainer.py` | | `outputs/train/<run_name>/` |
+| `evaluate` | `training/evaluator.py` | `data/class_remap.py`, `core/class_catalog.py`, `models/ultralytics_utils.py` | `outputs/eval/` |
+| `export-coreml` | `export/yolo_coreml.py` | `export/manifest.py`, `models/ultralytics_utils.py` | `outputs/coreml/*.mlpackage`, `manifest.json` |
+| `export-twinlitenet` | `export/twinlitenet_coreml.py` | `models/twinlitenet.py`, `export/manifest.py` | `outputs/coreml/twinlitenet_*.mlpackage` |
+| `verify-coreml` | `export/verify.py` | `export/comparison.py` | `outputs/coreml/verify_report.json` |
+
+`domain/`, `config/` và `utils/` được mọi lệnh dùng chung.
+
+### Thư mục `outputs/`
+
+Mọi thứ do các lệnh tạo ra đều nằm ở đây (không đưa vào Git):
+
+```
+outputs/
+├── pretrained_coco/yolo11n.pt              # mô hình gốc học trên COCO, điểm bắt đầu để train
+├── train/yolo11n_bdd100k/weights/best.pt   # mô hình đã train trên BDD100K (dùng cho video và Core ML)
+├── eval/evaluation_report.json             # điểm số trước và sau khi train
+└── coreml/                                 # .mlpackage + manifest.json cho app iOS
+```
 
 ### Quy ước code
 
@@ -71,7 +98,7 @@ Riêng `core/` không import torch, ultralytics hay OpenCV, nên mỗi file có 
 
 ## 2. Cài đặt
 
-Yêu cầu Python 3.10–3.12.
+Yêu cầu Python 3.11–3.12.
 
 ```bash
 python -m venv .venv
@@ -85,7 +112,7 @@ pip install -r requirements.txt
 
 - **GPU NVIDIA**: cài `torch` bản CUDA theo https://pytorch.org/get-started/locally/ trước, sau đó mới chạy lệnh trên.
 - **Core ML** (`coremltools`) **không có bản Windows**. Các lệnh `export-*` phải chạy trên macOS, Linux, WSL2 hoặc Google Colab. `verify-coreml` chỉ chạy được trên **macOS**, vì chỉ máy Apple mới chạy được mô hình Core ML.
-- Trọng số chính thức (`yolo11n.pt`) được Ultralytics **tự tải về** thư mục `weights/` khi dùng lần đầu.
+- Trọng số chính thức (`yolo11n.pt`) được Ultralytics **tự tải về** thư mục `outputs/pretrained_coco/` khi dùng lần đầu. Đây là mô hình gốc học trên COCO; mô hình đã train trên BDD100K nằm ở `outputs/train/yolo11n_bdd100k/weights/best.pt`.
 
 Kiểm tra cài đặt:
 
@@ -175,42 +202,13 @@ python -m dashcam_ml evaluate
 python -m dashcam_ml train
 ```
 
-Trọng số tốt nhất nằm ở `outputs/train/<run_name>/weights/best.pt`. Thêm đường dẫn này vào `evaluate.weights` để so với mô hình nền.
+Trọng số tốt nhất nằm ở `outputs/train/<run_name>/weights/best.pt`. Đường dẫn này đã có trong `evaluate.weights` (để so với mô hình nền), `coreml_export.weights` và `coreml_verify.pytorch_weights`. Project dashcam-video cũng đọc thẳng file này để chạy video.
 
 **Train trên Google Colab:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khanhhuypham/AIDashCam/blob/main/colab_train.ipynb), rồi làm theo ô đầu tiên của notebook. Notebook làm luôn bước đánh giá và xuất Core ML, kết quả lưu ở `MyDrive/AIDashCam/outputs/`.
 
-### 3.5 Chạy logic cảnh báo trên video (CV04, CV13)
+### 3.5 Thử mô hình trên video
 
-```bash
-python -m dashcam_ml run-video
-```
-
-- Đầu vào lấy từ `video.source`. AI chạy ở `video.ai_fps` (mặc định 10 FPS) để giả lập iPhone 8.
-- Tốc độ xe lấy từ `ego_speed:`. Có thể dùng hằng số, hoặc một file CSV `timestamp_s,speed_kmh` xuất từ GPS.
-- Kết quả trong `outputs/video/`:
-  - `<video>_debug.mp4`: box, ID track, vùng làn xe (hình thang), HUD khoảng cách/TTC/headway, banner cảnh báo.
-  - `<video>_events.json`: đầu vào và đầu ra của logic ở từng khung AI, kèm toàn bộ ngưỡng. File này là **dữ liệu test cho bản Swift** [App iOS (sau pipeline)].
-
-**Logic FCW** (`core/fcw.py`):
-
-1. Tracker IoU gán ID cho từng đối tượng. Track chỉ được dùng khi đã xuất hiện `min_hits` lần.
-2. Xe dẫn đầu là đối tượng gần nhất có điểm giữa cạnh dưới box nằm trong hình thang `in_path_roi`.
-3. **TTC = s / (ds/dt)**, với `s` là bề rộng (hoặc chiều cao) box, lấy bằng hồi quy tuyến tính trên `ttc_window_s` giây gần nhất. Cách này không cần hiệu chỉnh camera. Sau đó làm mượt bằng EMA.
-4. Khoảng cách tính theo mô hình pinhole từ `reference_size_m` và `camera.horizontal_fov_deg`. Chỉ gần đúng. Headway = khoảng cách / tốc độ xe.
-5. Mức cảnh báo: `CRITICAL` nếu TTC ≤ `ttc_critical_s`, `CAUTION` nếu TTC ≤ `ttc_caution_s` hoặc headway ≤ `headway_caution_s`. Dưới `min_ego_speed_kmh` thì không cảnh báo.
-6. Chống nhấp nháy: cần `min_consecutive_frames` khung liên tiếp mới bật cảnh báo. Âm thanh chỉ phát lại sau `cooldown_s`, trừ khi mức cảnh báo tăng lên.
-
-**Logic LDW** (`core/ldw.py`): ở mỗi dòng pixel gần đáy ảnh, lấy mép trong của vạch làn bên trái và bên phải tâm xe để suy ra tâm làn và bề rộng làn. Lấy trung vị qua các dòng. Độ lệch được tính là `(tâm xe − tâm làn) / (nửa bề rộng làn)`; nếu vượt `departure_threshold` liên tục thì cảnh báo trái/phải. Trên iPhone, người lái tự xác nhận xi-nhan qua tham số `turn_signal_active`.
-
-### 3.6 Phương án B: TwinLiteNet
-
-Repo của tác giả (cần kiểm tra lại link và trọng số):
-
-```bash
-git clone https://github.com/chequanghuy/TwinLiteNet third_party/TwinLiteNet
-```
-
-Kiểm tra `twinlitenet.weights` có trỏ đúng tới file `.pth` không, sau đó đặt `ldw.enabled: true` và chạy `run-video` để xem mặt nạ vùng lái (xanh lá), vạch làn (đỏ) và cảnh báo lệch làn.
+Xem project **dashcam-video** (`../dashcam-video/README.md`): `python -m dashcam_video run`.
 
 ---
 
@@ -238,6 +236,12 @@ python -m dashcam_ml export-coreml
 
 ### 4.2 TwinLiteNet
 
+Repo của tác giả (cần kiểm tra lại link và trọng số). dashcam-video cũng dùng repo clone ở đây khi bật LDW:
+
+```bash
+git clone https://github.com/chequanghuy/TwinLiteNet third_party/TwinLiteNet
+```
+
 ```bash
 python -m dashcam_ml export-twinlitenet
 ```
@@ -254,64 +258,28 @@ python -m dashcam_ml verify-coreml
 
 Hai phía nhận **cùng một ảnh đã letterbox**. Báo cáo `outputs/coreml/verify_report.json` gồm tỉ lệ box khớp, IoU trung bình, |Δconfidence| (YOLO), và IoU mặt nạ (TwinLiteNet). Muốn biết mô hình chạy trên CPU, GPU hay ANE thì xem thêm **Core ML Performance Report** trong Xcode.
 
-### 4.4 Config cho app iOS [App iOS (sau pipeline)]
+### 4.4 Giao cho app iOS
 
-```bash
-python -m dashcam_ml export-ios-config
-```
-
-Lệnh tạo `outputs/coreml/DashcamConfig.json` gồm camera, lớp, tracker, fcw, ldw và danh sách mô hình, để Swift dùng **chung bộ ngưỡng** với Python. Key để dạng `snake_case`; trong Swift decode bằng `JSONDecoder().keyDecodingStrategy = .convertFromSnakeCase`.
+Kéo các `.mlpackage` vào Xcode target (deployment target iOS 16). `DashcamConfig.json` (ngưỡng cảnh báo + danh sách mô hình) do dashcam-video tạo: `python -m dashcam_video export-ios-config`.
 
 ---
 
-## 5. Tích hợp vào app iOS
-
-1. Kéo `.mlpackage` và `DashcamConfig.json` vào Xcode target (deployment target iOS 16).
-2. Chạy mô hình bằng Vision trên một **queue riêng**, tách khỏi luồng ghi video [App iOS (sau pipeline)]:
-   ```swift
-   let config = MLModelConfiguration()
-   config.computeUnits = .all            // A11: GPU/CPU, A12+: ANE
-   let model = try VNCoreMLModel(for: yolo11n_416_fp16(configuration: config).model)
-   let request = VNCoreMLRequest(model: model) { request, _ in
-       let observations = request.results as? [VNRecognizedObjectObservation] ?? []
-       // boundingBox của Vision có gốc DƯỚI-trái: y_top = 1 - box.maxY
-   }
-   request.imageCropAndScaleOption = .scaleFit   // gần với letterbox lúc train
-   ```
-3. Viết lại `core/` bằng Swift theo đúng cấu trúc:
-
-   | Python | Swift gợi ý |
-   |---|---|
-   | `domain/enums.py` | `enum AlertLevel: Int`, `enum LaneDepartureSide: String` |
-   | `domain/entities.py` | `struct BoundingBox`, `struct Detection` |
-   | `core/tracking.py` | `final class IouTracker` |
-   | `core/debounce.py` | `final class AlertDebouncer<State>` |
-   | `core/fcw.py`, `core/ldw.py` | `ForwardCollisionWarner`, `LaneDepartureWarner` |
-
-4. Test Swift bằng `*_events.json`: đưa `detections` của từng frame vào `IouTracker` + `ForwardCollisionWarner` của Swift, rồi so `tracks` và `fcw` với giá trị Python đã ghi. Tracker xử lý hòa điểm theo thứ tự chỉ số, nên cả hai phía phải ra **cùng track ID**.
-
----
-
-## 6. Cấu hình (`config.yaml`)
+## 5. Cấu hình (`config.yaml`)
 
 | Nhóm | Nội dung |
 |---|---|
 | `project` | thư mục output, seed, `device` (`auto`/`cpu`/`0`/`mps`), `log_level` |
-| `classes` | tên lớp + alias, nhóm (`vehicle`/`two_wheeler`/`pedestrian`), kích thước thật |
-| `camera`, `ego_speed` | FOV ngang của camera, nguồn tốc độ xe (`constant`/`csv`/`none`) |
+| `classes` | tên lớp + alias (để so mô hình COCO với nhãn BDD/VN) |
 | `bdd100k`, `frame_extraction`, `split` | dữ liệu |
 | `train`, `evaluate` | huấn luyện, đánh giá |
-| `inference`, `video`, `tracker`, `fcw` | chạy video + FCW |
-| `twinlitenet`, `ldw` | phương án B |
-| `coreml_export`, `twinlitenet_export`, `coreml_verify`, `ios_config_export` | Core ML |
+| `twinlitenet` | phương án B: repo + trọng số TwinLiteNet |
+| `coreml_export`, `twinlitenet_export`, `coreml_verify` | Core ML |
 
-Mọi trường đều được kiểm tra bởi `dashcam_ml/config/schema.py`: sai kiểu, sai giá trị enum, key thừa, hay `ttc_critical_s ≥ ttc_caution_s` đều bị báo lỗi ngay lúc đọc.
+Mọi trường đều được kiểm tra bởi `dashcam_ml/config/schema.py`: sai kiểu, sai giá trị enum, key thừa, hay tỉ lệ chia tập không cộng đủ 1 đều bị báo lỗi ngay lúc đọc.
 
 ---
 
-## 7. Giới hạn và lưu ý
+## 6. Lưu ý
 
-- Khoảng cách từ một camera **chỉ gần đúng**. Phải hiệu chỉnh `camera.horizontal_fov_deg` và `in_path_roi` theo góc gắn điện thoại thực tế. TTC dựa trên tốc độ phóng to của box nên ít bị ảnh hưởng hơn.
-- App chỉ **hỗ trợ cảnh báo**, không thay thế sự chú ý của người lái. Không chạy nền (giới hạn iOS). iPhone 8 tối đa iOS 16, nên không dùng API iOS 17+.
-- Các ngưỡng mặc định trong `config.yaml` là điểm khởi đầu hợp lý, **chưa được hiệu chỉnh trên đường Việt Nam**. Cần chỉnh sau khi chạy thử trên xe và đếm cảnh báo sai mỗi giờ [App iOS (sau pipeline)].
-- Không đưa `data/`, `weights/`, `outputs/`, `third_party/` vào Git (đã có trong `.gitignore`).
+- iPhone 8 tối đa iOS 16, nên mô hình xuất ra phải chạy được trên iOS 16 (`minimum_ios_version` trong `manifest.json`).
+- Không đưa `data/`, `outputs/`, `third_party/` vào Git (đã có trong `.gitignore`).

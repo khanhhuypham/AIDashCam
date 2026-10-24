@@ -1,6 +1,5 @@
 # CV06: không đưa video, dữ liệu lớn, trọng số vào Git
 /data/
-/weights/
 /outputs/
 /third_party/
 /runs/

@@ -1,1 +1,1 @@
-"""Model adapters (Ultralytics YOLO, TwinLiteNet). Imported lazily: they pull in torch."""
+"""Model helpers (Ultralytics settings, TwinLiteNet loader). Imported lazily: they pull in torch."""

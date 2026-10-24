@@ -1,5 +1,4 @@
-"""Core warning logic (tracking, FCW, LDW).
+"""Class-name lookup shared by data conversion and evaluation.
 
-Only depends on numpy + the config/domain layers, never on torch / ultralytics /
-OpenCV, so each module can be ported line by line to Swift [App iOS (sau pipeline)].
+The warning logic (tracking, FCW, LDW) lives in the dashcam-video project.
 """

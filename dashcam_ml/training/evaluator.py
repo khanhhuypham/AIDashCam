@@ -8,7 +8,7 @@ from pathlib import Path
 from dashcam_ml.config.schema import EvaluateConfig, ImageSize, ProjectConfig
 from dashcam_ml.core.class_catalog import ClassCatalog
 from dashcam_ml.data.class_remap import prepare_dataset_for_model
-from dashcam_ml.models.yolo_detector import to_ultralytics_imgsz
+from dashcam_ml.models.ultralytics_utils import to_ultralytics_imgsz
 from dashcam_ml.utils.files import write_json
 from dashcam_ml.utils.logging_utils import get_logger
 from dashcam_ml.utils.runtime import resolve_device
