@@ -12,7 +12,15 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from dashcam_video.domain.enums import ClassCategory, EgoSpeedSource, LogLevel, ReferenceDimension, WeightPrecision
+from dashcam_video.domain.entities import BoundingBox
+from dashcam_video.domain.enums import (
+    ClassCategory,
+    EgoSpeedSource,
+    LogLevel,
+    Platform,
+    ReferenceDimension,
+    WeightPrecision,
+)
 
 BASE_DIR_CONTEXT_KEY: str = "base_dir"
 YOLO_STRIDE: int = 32
@@ -136,6 +144,16 @@ class InPathRoi(StrictModel):
             raise ValueError("in_path_roi.top_y must be smaller than bottom_y")
         return self
 
+    def contains(self, *, box: BoundingBox) -> bool:
+        """True when the bottom-centre of the box lies inside the ego-lane trapezoid."""
+        point_x: float = box.center_x
+        point_y: float = box.bottom_y
+        if point_y < self.top_y or point_y > self.bottom_y:
+            return False
+        progress: float = (point_y - self.top_y) / (self.bottom_y - self.top_y)
+        half_width: float = self.top_half_width + progress * (self.bottom_half_width - self.top_half_width)
+        return abs(point_x - self.center_x) <= half_width
+
 
 class FcwConfig(StrictModel):
     enabled: bool = True
@@ -192,19 +210,42 @@ class LdwConfig(StrictModel):
         return self
 
 
-# ----------------------------------------------------------------------------- iOS app
+# ----------------------------------------------------------------------------- mobile apps
 
 
-class IosConfigExportConfig(StrictModel):
+class AppConfigTarget(StrictModel):
+    """One ``DashcamConfig.json``: same thresholds for every app, models of one platform."""
+
+    platform: Platform
     models_manifest: ProjectPath
-    """``manifest.json`` written by dashcam-train's ``export-coreml``; fills the ``models`` list."""
+    """dashcam-train's ``manifest.json`` (``export-coreml`` for iOS, ``export-tflite`` for Android)."""
     output_path: ProjectPath
+
+
+class AppConfigExportConfig(StrictModel):
+    targets: tuple[AppConfigTarget, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check_unique_platforms(self) -> AppConfigExportConfig:
+        platforms: list[Platform] = [target.platform for target in self.targets]
+        if len(platforms) != len(set(platforms)):
+            raise ValueError("app_config_export.targets must list each platform once")
+        return self
+
+    def target(self, *, platform: Platform) -> AppConfigTarget:
+        for item in self.targets:
+            if item.platform is platform:
+                return item
+        raise KeyError(f"app_config_export has no target for platform '{platform.value}'")
 
 
 # ----------------------------------------------------------------------------- root
 
 
-class DashcamConfig(StrictModel):
+class RootConfig(StrictModel):
+    """The whole ``config.yaml``. Not to be confused with ``DashcamConfig.json``, the
+    smaller file written for the apps by ``export/app_config.py``."""
+
     project: ProjectConfig
     classes: tuple[ClassSpec, ...] = Field(min_length=1)
     camera: CameraConfig
@@ -215,4 +256,4 @@ class DashcamConfig(StrictModel):
     fcw: FcwConfig
     twinlitenet: TwinLiteNetConfig
     ldw: LdwConfig
-    ios_config_export: IosConfigExportConfig
+    app_config_export: AppConfigExportConfig

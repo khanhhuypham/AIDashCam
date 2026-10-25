@@ -1,14 +1,15 @@
 """Framework-free value objects shared by every layer.
 
 All boxes use normalised image coordinates (0..1, origin top-left), the same
-convention as Apple Vision after flipping Y, so the logic ports to Swift 1:1.
+convention as Apple Vision after flipping Y (and as TFLite YOLO output), so the logic
+ports to Swift and Kotlin 1:1.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dashcam_video.domain.enums import AlertLevel, LaneDepartureSide
+from dashcam_video.domain.enums import AlertLevel, LaneDepartureSide, ReferenceDimension
 
 JsonDict = dict[str, object]
 
@@ -40,6 +41,10 @@ class BoundingBox:
     def bottom_y(self) -> float:
         return self.y2
 
+    def size_along(self, *, dimension: ReferenceDimension) -> float:
+        """Normalised width or height, the side compared with a class's real-world size."""
+        return self.width if dimension is ReferenceDimension.WIDTH else self.height
+
     def iou(self, *, other: BoundingBox) -> float:
         inter_w: float = max(0.0, min(self.x2, other.x2) - max(self.x1, other.x1))
         inter_h: float = max(0.0, min(self.y2, other.y2) - max(self.y1, other.y1))
@@ -66,7 +71,11 @@ class Detection:
     confidence: float
 
     def to_dict(self) -> JsonDict:
-        return {"box": self.box.to_dict(), "class_name": self.class_name, "confidence": round(self.confidence, 4)}
+        return {
+            "box": self.box.to_dict(),
+            "class_name": self.class_name,
+            "confidence": round(self.confidence, 4)
+        }
 
 
 @dataclass(frozen=True, slots=True)

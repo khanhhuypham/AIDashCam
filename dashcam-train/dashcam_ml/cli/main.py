@@ -17,7 +17,7 @@ from dashcam_ml.utils.logging_utils import setup_logging
 
 def build_parser() -> argparse.ArgumentParser:
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        prog="dashcam_ml", description="AI Dashcam iOS - Python tooling (train, evaluate, Core ML export)."
+        prog="dashcam_ml", description="AI Dashcam - Python tooling (train, evaluate, Core ML / TFLite export)."
     )
     subparsers = parser.add_subparsers(dest="command", required=True, metavar="command")
     for command in Command:

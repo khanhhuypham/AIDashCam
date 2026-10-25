@@ -1,1 +1,1 @@
-"""Export layer: ``DashcamConfig.json`` for the iOS app."""
+"""Export layer: ``DashcamConfig.json`` for the iOS and Android apps."""

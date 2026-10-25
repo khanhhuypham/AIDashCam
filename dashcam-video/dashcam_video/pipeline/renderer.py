@@ -9,8 +9,8 @@ import numpy as np
 import numpy.typing as npt
 
 from dashcam_video.config.schema import InPathRoi
-from dashcam_video.domain.enums import AlertLevel, LaneDepartureSide
 from dashcam_video.core.ldw import LaneSegmentation
+from dashcam_video.domain.enums import AlertLevel, LaneDepartureSide
 from dashcam_video.pipeline.frame_result import FrameResult
 
 BgrImage = npt.NDArray[np.uint8]
@@ -100,13 +100,16 @@ class OverlayRenderer:
             )
 
     def _draw_hud(self, *, canvas: BgrImage, result: FrameResult) -> None:
-        lines: list[str] = [f"t={result.timestamp_s:6.2f}s  speed={_format_optional(value=result.ego_speed_kmh, unit='km/h')}"]
+        lines: list[str] = [
+            f"t={result.timestamp_s:6.2f}s  speed={_format_optional(value=result.ego_speed_kmh, unit='km/h')}"
+        ]
         banner: tuple[str, Palette] | None = None
         if result.fcw is not None:
             fcw = result.fcw
             lines.append(
                 f"FCW lead={fcw.lead_track_id}  d={_format_optional(value=fcw.distance_m, unit='m')}  "
-                f"TTC={_format_optional(value=fcw.ttc_s, unit='s')}  headway={_format_optional(value=fcw.headway_s, unit='s')}"
+                f"TTC={_format_optional(value=fcw.ttc_s, unit='s')}  "
+                f"headway={_format_optional(value=fcw.headway_s, unit='s')}"
             )
             if fcw.active_level is not AlertLevel.NONE:
                 banner = (f"FCW {fcw.active_level.name}", ALERT_COLORS[fcw.active_level])
@@ -117,7 +120,13 @@ class OverlayRenderer:
             if banner is None and ldw.active_side is not LaneDepartureSide.NONE:
                 banner = (f"LANE DEPARTURE {ldw.active_side.value.upper()}", Palette.CAUTION)
 
-        cv2.rectangle(img=canvas, pt1=(0, 0), pt2=(canvas.shape[1], 22 * len(lines) + 8), color=Palette.HUD_BACKGROUND.bgr, thickness=-1)
+        cv2.rectangle(
+            img=canvas,
+            pt1=(0, 0),
+            pt2=(canvas.shape[1], 22 * len(lines) + 8),
+            color=Palette.HUD_BACKGROUND.bgr,
+            thickness=-1,
+        )
         for index, line in enumerate(lines):
             cv2.putText(
                 img=canvas,

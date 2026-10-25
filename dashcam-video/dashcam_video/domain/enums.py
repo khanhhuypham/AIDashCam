@@ -57,8 +57,15 @@ class WeightPrecision(StrEnum):
     INT8 = "int8"
 
 
+class Platform(StrEnum):
+    """Mobile app that reads an exported ``DashcamConfig.json``."""
+
+    IOS = "ios"
+    ANDROID = "android"
+
+
 class Command(StrEnum):
     """CLI sub-commands (``python -m dashcam_video <command>``)."""
 
     RUN = "run"
-    EXPORT_IOS_CONFIG = "export-ios-config"
+    EXPORT_APP_CONFIG = "export-app-config"

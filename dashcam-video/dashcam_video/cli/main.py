@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 import argparse
-import io
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from dashcam_video.cli.commands import COMMAND_HANDLERS, COMMAND_HELP
 from dashcam_video.config.loader import DEFAULT_CONFIG_PATH, load_config
-from dashcam_video.config.schema import DashcamConfig
+from dashcam_video.config.schema import RootConfig
 from dashcam_video.domain.enums import Command
 from dashcam_video.utils.logging_utils import setup_logging
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        prog="dashcam_video", description="AI Dashcam iOS - chạy logic cảnh báo trên video, xuất config cho app."
+        prog="dashcam_video",
+        description="AI Dashcam - chạy logic cảnh báo trên video, xuất config cho app iOS và Android.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True, metavar="command")
     for command in Command:
@@ -31,17 +31,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _force_utf8_console() -> None:
-    """Windows consoles default to cp1252, which cannot print Vietnamese help/log text."""
-    for stream in (sys.stdout, sys.stderr):
-        if isinstance(stream, io.TextIOWrapper) and stream.encoding.lower() != "utf-8":
-            stream.reconfigure(encoding="utf-8", errors="replace")
+#
+# def _force_utf8_console() -> None:
+#     """Windows consoles default to cp1252, which cannot print Vietnamese help/log text."""
+#     for stream in (sys.stdout, sys.stderr):
+#         if isinstance(stream, io.TextIOWrapper) and stream.encoding.lower() != "utf-8":
+#             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def main(*, argv: Sequence[str] | None = None) -> int:
-    _force_utf8_console()
+    # _force_utf8_console()
     arguments: argparse.Namespace = build_parser().parse_args(args=argv)
-    config: DashcamConfig = load_config(config_path=arguments.config)
+    config: RootConfig = load_config(config_path=arguments.config)
     setup_logging(level=config.project.log_level)
     command: Command = Command(arguments.command)
     COMMAND_HANDLERS[command](config=config)

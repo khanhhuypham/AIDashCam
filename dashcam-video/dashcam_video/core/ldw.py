@@ -28,43 +28,6 @@ class LaneSegmentation:
     lane_mask: BoolMask
 
 
-def estimate_lane_position(*, lane_mask: BoolMask, config: LdwConfig) -> LanePosition | None:
-    mask_height, mask_width = lane_mask.shape
-    center_px: float = config.vehicle_center_x * mask_width
-    first_row: int = int(config.roi_top_y * mask_height)
-    last_row: int = min(mask_height - 1, int(config.roi_bottom_y * mask_height))
-    sampled_rows: range = range(first_row, last_row + 1, config.row_step)
-    if len(sampled_rows) == 0:
-        return None
-
-    centers: list[float] = []
-    widths: list[float] = []
-    for row in sampled_rows:
-        columns: npt.NDArray[np.intp] = np.flatnonzero(lane_mask[row])
-        left_columns: npt.NDArray[np.intp] = columns[columns < center_px]
-        right_columns: npt.NDArray[np.intp] = columns[columns >= center_px]
-        if left_columns.size == 0 or right_columns.size == 0:
-            continue
-        left_edge: float = float(left_columns.max())
-        right_edge: float = float(right_columns.min())
-        width_ratio: float = (right_edge - left_edge) / mask_width
-        if config.min_lane_width_ratio <= width_ratio <= config.max_lane_width_ratio:
-            centers.append((left_edge + right_edge) / 2.0)
-            widths.append(right_edge - left_edge)
-
-    valid_rows_ratio: float = len(centers) / len(sampled_rows)
-    if valid_rows_ratio < config.min_valid_rows_ratio:
-        return None
-    lane_center_px: float = float(np.median(a=np.asarray(centers)))
-    lane_width_px: float = float(np.median(a=np.asarray(widths)))
-    return LanePosition(
-        lane_center_x=lane_center_px / mask_width,
-        lane_width=lane_width_px / mask_width,
-        offset_ratio=(center_px - lane_center_px) / (lane_width_px / 2.0),
-        valid_rows_ratio=valid_rows_ratio,
-    )
-
-
 class LaneDepartureWarner:
     def __init__(self, *, config: LdwConfig) -> None:
         self._config: LdwConfig = config
@@ -75,6 +38,44 @@ class LaneDepartureWarner:
         self._left_debouncer.reset()
         self._right_debouncer.reset()
 
+    def estimate_lane_position(self, *, lane_mask: BoolMask) -> LanePosition | None:
+        """Lane centre and width near the bottom of the frame, or ``None`` when too few rows show both lines."""
+        config: LdwConfig = self._config
+        mask_height, mask_width = lane_mask.shape
+        center_px: float = config.vehicle_center_x * mask_width
+        first_row: int = int(config.roi_top_y * mask_height)
+        last_row: int = min(mask_height - 1, int(config.roi_bottom_y * mask_height))
+        sampled_rows: range = range(first_row, last_row + 1, config.row_step)
+        if len(sampled_rows) == 0:
+            return None
+
+        centers: list[float] = []
+        widths: list[float] = []
+        for row in sampled_rows:
+            columns: npt.NDArray[np.intp] = np.flatnonzero(lane_mask[row])
+            left_columns: npt.NDArray[np.intp] = columns[columns < center_px]
+            right_columns: npt.NDArray[np.intp] = columns[columns >= center_px]
+            if left_columns.size == 0 or right_columns.size == 0:
+                continue
+            left_edge: float = float(left_columns.max())
+            right_edge: float = float(right_columns.min())
+            width_ratio: float = (right_edge - left_edge) / mask_width
+            if config.min_lane_width_ratio <= width_ratio <= config.max_lane_width_ratio:
+                centers.append((left_edge + right_edge) / 2.0)
+                widths.append(right_edge - left_edge)
+
+        valid_rows_ratio: float = len(centers) / len(sampled_rows)
+        if valid_rows_ratio < config.min_valid_rows_ratio:
+            return None
+        lane_center_px: float = float(np.median(a=np.asarray(centers)))
+        lane_width_px: float = float(np.median(a=np.asarray(widths)))
+        return LanePosition(
+            lane_center_x=lane_center_px / mask_width,
+            lane_width=lane_width_px / mask_width,
+            offset_ratio=(center_px - lane_center_px) / (lane_width_px / 2.0),
+            valid_rows_ratio=valid_rows_ratio,
+        )
+
     def update(
         self,
         *,
@@ -83,7 +84,10 @@ class LaneDepartureWarner:
         ego_speed_kmh: float | None,
         turn_signal_active: bool = False,
     ) -> LdwResult:
-        """``turn_signal_active`` is confirmed by the driver in the app (iOS cannot read the blinker)."""
+        """``turn_signal_active`` is confirmed by the driver in the app.
+
+        Neither iOS nor Android can read the car's blinker.
+        """
         raw_side: LaneDepartureSide = self._raw_side(
             lane_position=lane_position, ego_speed_kmh=ego_speed_kmh, turn_signal_active=turn_signal_active
         )

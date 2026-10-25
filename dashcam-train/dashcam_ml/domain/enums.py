@@ -43,7 +43,7 @@ class DatasetSplit(StrEnum):
 
 
 class ModelKind(StrEnum):
-    """Role of an exported Core ML model inside the iOS app."""
+    """Role of an exported model (Core ML or TFLite) inside the mobile app."""
 
     DETECTOR = "detector"
     LANE_SEGMENTER = "lane_segmenter"
@@ -66,3 +66,5 @@ class Command(StrEnum):
     EXPORT_COREML = "export-coreml"
     EXPORT_TWINLITENET = "export-twinlitenet"
     VERIFY_COREML = "verify-coreml"
+    EXPORT_TFLITE = "export-tflite"
+    VERIFY_TFLITE = "verify-tflite"

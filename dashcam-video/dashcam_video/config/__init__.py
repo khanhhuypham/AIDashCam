@@ -1,6 +1,6 @@
 """Config layer: schema of ``config.yaml`` and its loader."""
 
 from dashcam_video.config.loader import DEFAULT_CONFIG_PATH, load_config
-from dashcam_video.config.schema import DashcamConfig
+from dashcam_video.config.schema import RootConfig
 
-__all__ = ["DEFAULT_CONFIG_PATH", "DashcamConfig", "load_config"]
+__all__ = ["DEFAULT_CONFIG_PATH", "RootConfig", "load_config"]

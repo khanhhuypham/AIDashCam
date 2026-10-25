@@ -1,8 +1,8 @@
 # =============================================================================
-# AI DASHCAM iOS - cấu hình duy nhất cho phần Python train mô hình (dashcam_ml)
+# AI DASHCAM (iOS + Android) - cấu hình duy nhất cho phần Python train mô hình (dashcam_ml)
 # -----------------------------------------------------------------------------
 # - Mọi đường dẫn tương đối được tính từ THƯ MỤC CHỨA FILE NÀY.
-# - Project này: dữ liệu -> train -> đánh giá -> xuất Core ML.
+# - Project này: dữ liệu -> train -> đánh giá -> xuất Core ML (iOS) + TFLite (Android).
 # - Chạy video + ngưỡng cảnh báo (tracker/fcw/ldw) + DashcamConfig.json nằm ở project
 #   dashcam-video đặt cạnh (../dashcam-video).
 # =============================================================================
@@ -129,7 +129,7 @@ twinlitenet:
     mask_threshold: 0.5
 
 # =============================================================================
-# CORE ML (CV14) - cần chạy trên macOS hoặc Linux (coremltools không hỗ trợ Windows)
+# CORE ML cho iOS (CV14) - cần chạy trên macOS hoặc Linux (coremltools không hỗ trợ Windows)
 # =============================================================================
 
 coreml_export:
@@ -168,3 +168,35 @@ coreml_verify:
     match_iou_threshold: 0.5
     output_json: outputs/coreml/verify_report.json
 
+# =============================================================================
+# TFLITE (LiteRT) cho Android - cần chạy trên Linux x86-64 hoặc macOS (ví dụ Colab), Windows không chạy được
+# =============================================================================
+
+tflite_export:
+    weights: outputs/train/yolo11n_bdd100k/weights/best.pt
+    output_dir: outputs/tflite
+    calibration_data: data/yolo_bdd100k/dataset.yaml   # ảnh val dùng để hiệu chỉnh khi nén int8
+    calibration_fraction: 0.05     # tỉ lệ ảnh val dùng để hiệu chỉnh (bản đầy đủ: ~500 ảnh)
+    minimum_android_sdk: 26        # Android 8.0; TẠM, đổi khi chốt máy Android yếu nhất
+    profiles:                      # precision: fp32 | int8 (fp32 tự chạy fp16 trên GPU Android nên không có profile fp16)
+        - name: yolo11n_320_fp32
+          imgsz: 320
+          precision: fp32
+          target_devices: Android tầm thấp (GPU delegate)
+        - name: yolo11n_416_fp32
+          imgsz: 416
+          precision: fp32
+          target_devices: Android tầm trung (GPU delegate)
+        - name: yolo11n_416_int8
+          imgsz: 416
+          precision: int8            # nén trọng số + activation INT8, nhẹ nhất cho CPU / NPU
+          target_devices: Android không có GPU tốt - thử INT8
+
+tflite_verify:
+    pytorch_weights: outputs/train/yolo11n_bdd100k/weights/best.pt
+    images_dir: data/samples/images
+    max_images: 20
+    conf: 0.25
+    iou: 0.45
+    match_iou_threshold: 0.5
+    output_json: outputs/tflite/verify_report.json

@@ -1,6 +1,6 @@
-# AI Dashcam iOS: phần Python train mô hình (`dashcam_ml`)
+# AI Dashcam: phần Python train mô hình (`dashcam_ml`)
 
-Code Python để **chuẩn bị dữ liệu, train/đánh giá và xuất mô hình Core ML** cho app dashcam iOS (máy tối thiểu iPhone 8, iOS 16).
+Code Python để **chuẩn bị dữ liệu, train/đánh giá và xuất mô hình** cho app dashcam **iOS** (Core ML, máy tối thiểu iPhone 8, iOS 16) và **Android** (TFLite).
 
 Phần **chạy logic cảnh báo trên video** (tracking, FCW, LDW) và **`DashcamConfig.json` cho app** nằm ở project riêng **dashcam-video**, đặt cạnh project này (`../dashcam-video`). Hai project chỉ trao đổi qua file:
 
@@ -8,15 +8,17 @@ Phần **chạy logic cảnh báo trên video** (tracking, FCW, LDW) và **`Dash
 |---|---|---|
 | `outputs/train/yolo11n_bdd100k/weights/best.pt` | `train` | dashcam-video (chạy video trên máy tính) |
 | `outputs/coreml/*.mlpackage` | `export-coreml` | app iOS |
-| `outputs/coreml/manifest.json` | `export-coreml` | dashcam-video (điền danh sách mô hình vào `DashcamConfig.json`) |
+| `outputs/coreml/manifest.json` | `export-coreml` | dashcam-video (điền danh sách mô hình vào `DashcamConfig.json` của iOS) |
+| `outputs/tflite/*.tflite` | `export-tflite` | app Android |
+| `outputs/tflite/manifest.json` | `export-tflite` | dashcam-video (điền danh sách mô hình vào `DashcamConfig.json` của Android) |
 
 Nội dung dựa trên file `Đồ_án_AI_Dashcam.xlsm`:
 
 | Phương án (sheet *So sánh đề tài*) | Trạng thái trong code |
 |---|---|
-| **A. Cảnh báo va chạm (FCW)**: YOLO11n | Đầy đủ: data, train, evaluate, xuất Core ML, kiểm tra. Logic FCW ở dashcam-video |
-| **B. Cảnh báo lệch làn (LDW)**: TwinLiteNet | Xuất Core ML (cần clone repo tác giả). Logic LDW ở dashcam-video |
-| C. Đa nhiệm: YOLOP | Chưa làm (nặng nhất, rủi ro cao trên iPhone 8) |
+| **A. Cảnh báo va chạm (FCW)**: YOLO11n | Đầy đủ: data, train, evaluate, xuất Core ML + TFLite, kiểm tra. Logic FCW ở dashcam-video |
+| **B. Cảnh báo lệch làn (LDW)**: TwinLiteNet | Xuất Core ML (cần clone repo tác giả); chưa có bản TFLite. Logic LDW ở dashcam-video |
+| C. Đa nhiệm: YOLOP | Chưa làm (nặng nhất, rủi ro cao trên máy yếu) |
 
 Các việc trong sheet *Công việc cần làm* mà code này làm được:
 
@@ -27,8 +29,9 @@ Các việc trong sheet *Công việc cần làm* mà code này làm được:
 | CV09 Chia dữ liệu theo từng video | `split-dataset` |
 | CV10/CV11 Đánh giá trọng số có sẵn, so kích thước ảnh | `evaluate` |
 | CV12 Fine-tune | `train` |
-| CV14 Xuất Core ML và so với PyTorch | `export-coreml`, `export-twinlitenet`, `verify-coreml` |
-| CV04, CV13, dữ liệu test cho bản Swift | ở project dashcam-video |
+| CV14 Xuất Core ML (iOS) và so với PyTorch | `export-coreml`, `export-twinlitenet`, `verify-coreml` |
+| Xuất TFLite (Android) và so với PyTorch | `export-tflite`, `verify-tflite` |
+| CV04, CV13, dữ liệu test cho bản Swift / Kotlin | ở project dashcam-video |
 
 ---
 
@@ -42,13 +45,13 @@ dashcam-train/
 │   ├── __main__.py             # python -m dashcam_ml <command>
 │   ├── domain/                 # (1) Không phụ thuộc thư viện ngoài
 │   │   ├── enums.py            #     mọi Enum: CopyMode, WeightPrecision, ModelKind, Command...
-│   │   └── entities.py         #     BoundingBox, Detection (dùng khi so Core ML với PyTorch)
+│   │   └── entities.py         #     BoundingBox, Detection (dùng khi so mô hình xuất ra với PyTorch)
 │   ├── config/                 # (2) Schema pydantic cho config.yaml + loader
 │   ├── core/                   # (3) class_catalog.py: tra lớp theo tên/alias
 │   ├── models/                 # (4) Ultralytics (tham số dùng chung), TwinLiteNet (torch)
 │   ├── data/                   # (4) BDD100K -> YOLO, trích khung hình, chia tập, remap lớp
 │   ├── training/               # (4) train, evaluate
-│   ├── export/                 # (4) Core ML, manifest, kiểm tra
+│   ├── export/                 # (4) Core ML (iOS), TFLite (Android), manifest, kiểm tra
 │   ├── cli/                    # (5) argparse, mỗi Command một handler
 │   └── utils/                  #     logging, file, device/platform
 ├── docs/                       # kế hoạch, ghi chú
@@ -72,6 +75,8 @@ Mỗi lệnh có một handler trong `cli/commands.py`. Handler gọi đúng m�
 | `export-coreml` | `export/yolo_coreml.py` | `export/manifest.py`, `models/ultralytics_utils.py` | `outputs/coreml/*.mlpackage`, `manifest.json` |
 | `export-twinlitenet` | `export/twinlitenet_coreml.py` | `models/twinlitenet.py`, `export/manifest.py` | `outputs/coreml/twinlitenet_*.mlpackage` |
 | `verify-coreml` | `export/verify.py` | `export/comparison.py` | `outputs/coreml/verify_report.json` |
+| `export-tflite` | `export/yolo_tflite.py` | `export/manifest.py`, `models/ultralytics_utils.py` | `outputs/tflite/*.tflite`, `manifest.json` |
+| `verify-tflite` | `export/verify.py` | `export/comparison.py` | `outputs/tflite/verify_report.json` |
 
 `domain/`, `config/` và `utils/` được mọi lệnh dùng chung.
 
@@ -82,9 +87,10 @@ Mọi thứ do các lệnh tạo ra đều nằm ở đây (không đưa vào Gi
 ```
 outputs/
 ├── pretrained_coco/yolo11n.pt              # mô hình gốc học trên COCO, điểm bắt đầu để train
-├── train/yolo11n_bdd100k/weights/best.pt   # mô hình đã train trên BDD100K (dùng cho video và Core ML)
+├── train/yolo11n_bdd100k/weights/best.pt   # mô hình đã train trên BDD100K (dùng cho video, Core ML, TFLite)
 ├── eval/evaluation_report.json             # điểm số trước và sau khi train
-└── coreml/                                 # .mlpackage + manifest.json cho app iOS
+├── coreml/                                 # .mlpackage + manifest.json cho app iOS
+└── tflite/                                 # .tflite + manifest.json cho app Android
 ```
 
 ### Quy ước code
@@ -92,7 +98,7 @@ outputs/
 - Mọi hàm, biến, thuộc tính đều có **kiểu dữ liệu**. Hàm của project đặt `*` trong chữ ký để **bắt buộc gọi bằng named argument**, ví dụ `load_config(config_path=...)`.
 - Mọi tập giá trị cố định đều là **`Enum`** (`StrEnum`/`IntEnum`) trong `domain/enums.py`. Pydantic chuyển chuỗi trong YAML sang enum, nên giá trị sai bị báo lỗi ngay lúc đọc config.
 - Không viết cứng ngưỡng hay đường dẫn trong code. Tất cả nằm trong `config.yaml`.
-- Tọa độ box luôn **chuẩn hóa 0..1, gốc trên-trái**, không phụ thuộc độ phân giải, giống cách dùng với Vision trên iOS.
+- Tọa độ box luôn **chuẩn hóa 0..1, gốc trên-trái**, không phụ thuộc độ phân giải, giống cách dùng với Vision trên iOS và với đầu ra TFLite trên Android.
 
 ---
 
@@ -112,6 +118,7 @@ pip install -r requirements.txt
 
 - **GPU NVIDIA**: cài `torch` bản CUDA theo https://pytorch.org/get-started/locally/ trước, sau đó mới chạy lệnh trên.
 - **Core ML** (`coremltools`) **không có bản Windows**. Các lệnh `export-*` phải chạy trên macOS, Linux, WSL2 hoặc Google Colab. `verify-coreml` chỉ chạy được trên **macOS**, vì chỉ máy Apple mới chạy được mô hình Core ML.
+- **TFLite** (LiteRT: `litert-torch`, `ai-edge-litert`) cũng **không có bản Windows**: `export-tflite` và `verify-tflite` chạy trên Linux x86-64 hoặc macOS, thường là Google Colab. Notebook tự cài các gói này ở bước xuất.
 - Trọng số chính thức (`yolo11n.pt`) được Ultralytics **tự tải về** thư mục `outputs/pretrained_coco/` khi dùng lần đầu. Đây là mô hình gốc học trên COCO; mô hình đã train trên BDD100K nằm ở `outputs/train/yolo11n_bdd100k/weights/best.pt`.
 
 Kiểm tra cài đặt:
@@ -202,9 +209,9 @@ python -m dashcam_ml evaluate
 python -m dashcam_ml train
 ```
 
-Trọng số tốt nhất nằm ở `outputs/train/<run_name>/weights/best.pt`. Đường dẫn này đã có trong `evaluate.weights` (để so với mô hình nền), `coreml_export.weights` và `coreml_verify.pytorch_weights`. Project dashcam-video cũng đọc thẳng file này để chạy video.
+Trọng số tốt nhất nằm ở `outputs/train/<run_name>/weights/best.pt`. Đường dẫn này đã có trong `evaluate.weights` (để so với mô hình nền), `coreml_export.weights`, `coreml_verify.pytorch_weights`, `tflite_export.weights` và `tflite_verify.pytorch_weights`. Project dashcam-video cũng đọc thẳng file này để chạy video.
 
-**Train trên Google Colab:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khanhhuypham/AIDashCam/blob/main/dashcam-train/colab_train.ipynb), rồi làm theo ô đầu tiên của notebook. Notebook làm luôn bước đánh giá và xuất Core ML, kết quả lưu ở `MyDrive/AIDashCam/outputs/`.
+**Train trên Google Colab:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khanhhuypham/AIDashCam/blob/main/dashcam-train/colab_train.ipynb), rồi làm theo ô đầu tiên của notebook. Notebook làm luôn bước đánh giá và xuất Core ML + TFLite, kết quả lưu ở `MyDrive/AIDashCam/outputs/`.
 
 ### 3.5 Thử mô hình trên video
 
@@ -212,7 +219,7 @@ Xem project **dashcam-video** (`../dashcam-video/README.md`): `python -m dashcam
 
 ---
 
-## 4. Xuất Core ML (CV14), chạy trên macOS/Linux
+## 4. Xuất Core ML cho iOS (CV14), chạy trên macOS/Linux
 
 ### 4.1 YOLO
 
@@ -246,7 +253,7 @@ git clone https://github.com/chequanghuy/TwinLiteNet third_party/TwinLiteNet
 python -m dashcam_ml export-twinlitenet
 ```
 
-Input là ảnh RGB 640×360. Hai output `drivable_prob` và `lane_prob` có dạng `(1, 360, 640)`, là xác suất lớp tiền cảnh. Trong Swift, so với `mask_threshold` để ra mặt nạ.
+Input là ảnh RGB 640×360. Hai output `drivable_prob` và `lane_prob` có dạng `(1, 360, 640)`, là xác suất lớp tiền cảnh. Trong app, so với `mask_threshold` để ra mặt nạ.
 
 ### 4.3 So Core ML với PyTorch (chỉ macOS)
 
@@ -260,11 +267,47 @@ Hai phía nhận **cùng một ảnh đã letterbox**. Báo cáo `outputs/coreml
 
 ### 4.4 Giao cho app iOS
 
-Kéo các `.mlpackage` vào Xcode target (deployment target iOS 16). `DashcamConfig.json` (ngưỡng cảnh báo + danh sách mô hình) do dashcam-video tạo: `python -m dashcam_video export-ios-config`.
+Kéo các `.mlpackage` vào Xcode target (deployment target iOS 16). `DashcamConfig.json` (ngưỡng cảnh báo + danh sách mô hình) do dashcam-video tạo: `python -m dashcam_video export-app-config` (file `outputs/ios/DashcamConfig.json`).
 
 ---
 
-## 5. Cấu hình (`config.yaml`)
+## 5. Xuất TFLite cho Android, chạy trên Linux/macOS (Colab)
+
+### 5.1 YOLO
+
+Ultralytics gọi định dạng này là **LiteRT** (tên mới của TFLite), file vẫn là `.tflite`. Mỗi profile trong `tflite_export.profiles` tạo ra một file:
+
+| Profile | imgsz | precision | Dành cho |
+|---|---|---|---|
+| `yolo11n_320_fp32` | 320 | fp32 | Android tầm thấp (GPU delegate) |
+| `yolo11n_416_fp32` | 416 | fp32 | Android tầm trung (GPU delegate) |
+| `yolo11n_416_int8` | 416 | int8 | máy không có GPU tốt, thử INT8 |
+
+```bash
+python -m dashcam_ml export-tflite
+```
+
+- `precision` chỉ nhận `fp32` hoặc `int8`. Mô hình fp32 tự chạy ở fp16 trên GPU Android (GPU delegate), nên không có profile fp16 riêng.
+- `int8` cần ảnh để hiệu chỉnh: lấy ảnh `val` của `calibration_data`, dùng `calibration_fraction` (mặc định 5%).
+- **Mô hình không có NMS bên trong** (LiteRT không hỗ trợ). App Android tự lọc theo ngưỡng `conf` và gộp box trùng (NMS) theo `iou` trong `DashcamConfig.json`. Cách đọc input/output ghi ở trường `output_layout` của từng mô hình trong `manifest.json`: input `float32` RGB 0..1 đã letterbox (viền 114); output mỗi anchor gồm `cx, cy, w, h` chuẩn hóa 0..1 rồi điểm của từng lớp theo thứ tự `class_names`.
+- `minimum_android_sdk` (mặc định 26 = Android 8.0) được ghi vào `manifest.json`. **Giá trị tạm**, đổi khi chốt máy Android yếu nhất.
+- Kết quả trong `outputs/tflite/`: các `.tflite` và `manifest.json`. Bản manifest của iOS (`outputs/coreml/`) không đổi.
+
+### 5.2 So TFLite với PyTorch
+
+```bash
+python -m dashcam_ml verify-tflite
+```
+
+Giống `verify-coreml` (cùng ảnh đã letterbox, cùng chỉ số), báo cáo ở `outputs/tflite/verify_report.json`. Trên Colab notebook tự trỏ `tflite_verify.images_dir` sang ảnh val.
+
+### 5.3 Giao cho app Android
+
+Chép các `.tflite` vào `assets/` của app Android. `DashcamConfig.json` cho Android do dashcam-video tạo cùng lệnh `python -m dashcam_video export-app-config` (file `outputs/android/DashcamConfig.json`).
+
+---
+
+## 6. Cấu hình (`config.yaml`)
 
 | Nhóm | Nội dung |
 |---|---|
@@ -273,13 +316,15 @@ Kéo các `.mlpackage` vào Xcode target (deployment target iOS 16). `DashcamCon
 | `bdd100k`, `frame_extraction`, `split` | dữ liệu |
 | `train`, `evaluate` | huấn luyện, đánh giá |
 | `twinlitenet` | phương án B: repo + trọng số TwinLiteNet |
-| `coreml_export`, `twinlitenet_export`, `coreml_verify` | Core ML |
+| `coreml_export`, `twinlitenet_export`, `coreml_verify` | Core ML (iOS) |
+| `tflite_export`, `tflite_verify` | TFLite (Android) |
 
 Mọi trường đều được kiểm tra bởi `dashcam_ml/config/schema.py`: sai kiểu, sai giá trị enum, key thừa, hay tỉ lệ chia tập không cộng đủ 1 đều bị báo lỗi ngay lúc đọc.
 
 ---
 
-## 6. Lưu ý
+## 7. Lưu ý
 
-- iPhone 8 tối đa iOS 16, nên mô hình xuất ra phải chạy được trên iOS 16 (`minimum_ios_version` trong `manifest.json`).
+- iPhone 8 tối đa iOS 16, nên mô hình xuất ra phải chạy được trên iOS 16 (`minimum_ios_version` trong `manifest.json` của Core ML).
+- Máy Android yếu nhất chưa chốt: `minimum_android_sdk` và các profile TFLite hiện là giá trị tạm.
 - Không đưa `data/`, `outputs/`, `third_party/` vào Git (đã có trong `.gitignore`).

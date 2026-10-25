@@ -24,19 +24,6 @@ QUANTIZE_BITS: dict[WeightPrecision, int | None] = {
 }
 
 
-def ultralytics_precision_kwargs(*, precision: WeightPrecision) -> dict[str, object]:
-    """Ultralytics >= 8.4 uses ``quantize``; older releases use ``half`` / ``int8`` flags."""
-    from ultralytics.cfg import DEFAULT_CFG_DICT
-
-    if "quantize" in DEFAULT_CFG_DICT:
-        return {"quantize": QUANTIZE_BITS[precision]}
-    return {"half": precision is WeightPrecision.FP16, "int8": precision is WeightPrecision.INT8}
-
-
-def to_ultralytics_imgsz(*, imgsz: ImageSize) -> int | list[int]:
-    return imgsz if isinstance(imgsz, int) else [imgsz[0], imgsz[1]]
-
-
 class YoloDetector:
     def __init__(self, *, config: InferenceConfig, catalog: ClassCatalog, device: str) -> None:
         from ultralytics import YOLO
@@ -44,7 +31,7 @@ class YoloDetector:
         self._config: InferenceConfig = config
         self._catalog: ClassCatalog = catalog
         self._device: str | None = resolve_device(device=device)
-        self._precision_kwargs: dict[str, object] = ultralytics_precision_kwargs(precision=config.precision)
+        self._precision_kwargs: dict[str, object] = self._ultralytics_precision_kwargs(precision=config.precision)
         self._model: YOLO = YOLO(model=str(config.weights))
         self._class_names: dict[int, str] = {int(index): str(name) for index, name in self._model.names.items()}
 
@@ -52,11 +39,24 @@ class YoloDetector:
     def class_names(self) -> dict[int, str]:
         return self._class_names
 
+    @staticmethod
+    def _ultralytics_precision_kwargs(*, precision: WeightPrecision) -> dict[str, object]:
+        """Ultralytics >= 8.4 uses ``quantize``; older releases use ``half`` / ``int8`` flags."""
+        from ultralytics.cfg import DEFAULT_CFG_DICT
+
+        if "quantize" in DEFAULT_CFG_DICT:
+            return {"quantize": QUANTIZE_BITS[precision]}
+        return {"half": precision is WeightPrecision.FP16, "int8": precision is WeightPrecision.INT8}
+
+    @staticmethod
+    def _ultralytics_imgsz(*, imgsz: ImageSize) -> int | list[int]:
+        return imgsz if isinstance(imgsz, int) else [imgsz[0], imgsz[1]]
+
     def detect(self, *, frame_bgr: BgrImage) -> list[Detection]:
         """Run the model on one frame; keep only classes listed in ``config.classes``."""
         results = self._model.predict(
             source=frame_bgr,
-            imgsz=to_ultralytics_imgsz(imgsz=self._config.imgsz),
+            imgsz=self._ultralytics_imgsz(imgsz=self._config.imgsz),
             conf=self._config.conf,
             iou=self._config.iou,
             max_det=self._config.max_det,

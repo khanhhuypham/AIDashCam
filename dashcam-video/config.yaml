@@ -3,8 +3,9 @@
 # -----------------------------------------------------------------------------
 # - Mọi đường dẫn tương đối được tính từ THƯ MỤC CHỨA FILE NÀY.
 # - Mô hình đến từ project dashcam-train đặt cạnh (../dashcam-train): project này không train.
-# - Đây là nơi DUY NHẤT giữ ngưỡng cảnh báo. Lệnh `python -m dashcam_video export-ios-config`
-#   xuất các ngưỡng này ra DashcamConfig.json để app Swift dùng đúng một bộ ngưỡng.
+# - Đây là nơi DUY NHẤT giữ ngưỡng cảnh báo. Lệnh `python -m dashcam_video export-app-config`
+#   xuất các ngưỡng này ra DashcamConfig.json cho app iOS (Swift) và app Android (Kotlin),
+#   để hai app dùng đúng một bộ ngưỡng.
 # =============================================================================
 
 project:
@@ -57,12 +58,13 @@ classes:
       reference_dimension: height
       reference_size_m: 1.6
 
-# Camera sau của iPhone (ống chính ~26 mm). Quay 16:9 có góc ngang khoảng 60–65°.
+# Góc nhìn ngang của camera sau. iPhone (ống chính ~26 mm) quay 16:9 khoảng 60–65°.
+# Máy Android khác nhau nhiều: app Android nên đọc FOV thật từ camera lúc chạy, giá trị này chỉ là mặc định.
 # Nên đo lại cho đúng máy/góc gắn thực tế.
 camera:
     horizontal_fov_deg: 63.0
 
-# Tốc độ xe. Trên iPhone lấy từ GPS; khi chạy video trên máy tính thì giả lập.
+# Tốc độ xe. Trên điện thoại lấy từ GPS; khi chạy video trên máy tính thì giả lập.
 ego_speed:
     source: constant               # constant | csv | none (none = không lọc theo tốc độ)
     constant_kmh: 40.0
@@ -74,7 +76,7 @@ ego_speed:
 
 inference:
     weights: ../dashcam-train/outputs/train/yolo11n_bdd100k/weights/best.pt   # mô hình đã train ở project dashcam-train
-    imgsz: 416                     # iPhone 8: 320–416; máy mới: 640
+    imgsz: 416                     # máy yếu (iPhone 8, Android tầm thấp): 320–416; máy mới: 640
     conf: 0.35
     iou: 0.5
     max_det: 50
@@ -83,14 +85,14 @@ inference:
 video:
     source: data/samples/dashcam.mp4
     output_dir: outputs/video
-    ai_fps: 10.0                   # giả lập tốc độ AI trên iPhone 8 (mục tiêu 5–10 FPS)
+    ai_fps: 10.0                   # giả lập tốc độ AI trên máy yếu (mục tiêu 5–10 FPS)
     max_seconds: null              # null = chạy hết video
     save_video: true
-    save_events_json: true         # file JSON dùng làm dữ liệu test cho bản Swift
+    save_events_json: true         # file JSON dùng làm dữ liệu test cho bản Swift / Kotlin
     display: false                 # true = mở cửa sổ xem trực tiếp (bấm q để thoát)
     output_codec: mp4v
 
-# Tracker IoU đơn giản, cố ý viết để dễ chuyển sang Swift
+# Tracker IoU đơn giản, cố ý viết để dễ chuyển sang Swift / Kotlin
 tracker:
     iou_threshold: 0.3
     max_missed_frames: 5           # số khung AI liên tiếp mất dấu trước khi xoá track
@@ -147,9 +149,14 @@ ldw:
     min_ego_speed_kmh: 30.0
 
 # =============================================================================
-# CONFIG CHO APP iOS
+# CONFIG CHO APP iOS + ANDROID: cùng ngưỡng, mỗi app một file với mô hình của nền tảng đó
 # =============================================================================
 
-ios_config_export:
-    models_manifest: ../dashcam-train/outputs/coreml/manifest.json   # do `export-coreml` của dashcam-train tạo ra
-    output_path: outputs/ios/DashcamConfig.json
+app_config_export:
+    targets:
+        - platform: ios
+          models_manifest: ../dashcam-train/outputs/coreml/manifest.json   # do `export-coreml` tạo ra
+          output_path: outputs/ios/DashcamConfig.json                    # giữ nguyên cấu trúc: app iOS đã phát hành đang đọc
+        - platform: android
+          models_manifest: ../dashcam-train/outputs/tflite/manifest.json   # do `export-tflite` tạo ra
+          output_path: outputs/android/DashcamConfig.json

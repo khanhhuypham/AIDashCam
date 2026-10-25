@@ -1,7 +1,7 @@
 """Greedy IoU multi-object tracker.
 
-Deliberately simple and deterministic (ties broken by index) so the Swift port in
-the iOS app produces exactly the same track IDs on the same input.
+Deliberately simple and deterministic (ties broken by index) so the Swift / Kotlin
+ports in the apps produce exactly the same track IDs on the same input.
 """
 
 from __future__ import annotations
@@ -25,6 +25,19 @@ class Track:
     first_seen_s: float
     last_seen_s: float
     history: deque[tuple[float, BoundingBox]] = field(default_factory=deque)
+
+    def snapshot(self) -> Track:
+        """Copy without history, so later tracker updates do not change a stored result."""
+        return Track(
+            track_id=self.track_id,
+            class_name=self.class_name,
+            box=self.box,
+            confidence=self.confidence,
+            hits=self.hits,
+            missed_frames=self.missed_frames,
+            first_seen_s=self.first_seen_s,
+            last_seen_s=self.last_seen_s,
+        )
 
     def to_dict(self) -> JsonDict:
         return {
@@ -76,9 +89,7 @@ class IouTracker:
             if detection_index not in matched_detections:
                 self._tracks.append(self._create_track(detection=detection, timestamp_s=timestamp_s))
 
-        return [
-            track for track in self._tracks if track.missed_frames == 0 and track.hits >= self._config.min_hits
-        ]
+        return [track for track in self._tracks if track.missed_frames == 0 and track.hits >= self._config.min_hits]
 
     def _apply_match(self, *, track: Track, detection: Detection, timestamp_s: float) -> None:
         track.box = detection.box

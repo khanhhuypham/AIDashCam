@@ -172,7 +172,7 @@ class TwinLiteNetConfig(StrictModel):
     mask_threshold: float = Field(gt=0.0, lt=1.0)
 
 
-# ----------------------------------------------------------------------------- Core ML
+# ----------------------------------------------------------------------------- Core ML (iOS)
 
 
 class CoremlProfile(StrictModel):
@@ -200,7 +200,9 @@ class TwinLiteNetExportConfig(StrictModel):
     precision: WeightPrecision = WeightPrecision.FP16
 
 
-class CoremlVerifyConfig(StrictModel):
+class ExportVerifyConfig(StrictModel):
+    """Compare exported models (Core ML or TFLite) with PyTorch on the same images."""
+
     pytorch_weights: ProjectPath
     images_dir: ProjectPath
     max_images: int = Field(gt=0)
@@ -208,6 +210,40 @@ class CoremlVerifyConfig(StrictModel):
     iou: float = Field(ge=0.0, le=1.0)
     match_iou_threshold: float = Field(gt=0.0, le=1.0)
     output_json: ProjectPath
+
+
+# ----------------------------------------------------------------------------- TFLite (Android)
+
+
+class TfliteProfile(StrictModel):
+    name: str = Field(pattern=r"^[A-Za-z0-9_\-]+$")
+    imgsz: ImageSize
+    precision: WeightPrecision = WeightPrecision.FP32
+    target_devices: str = ""
+
+    @field_validator("imgsz")
+    @classmethod
+    def _check_imgsz(cls, value: ImageSize) -> ImageSize:
+        return _validate_image_size(value=value)
+
+    @field_validator("precision")
+    @classmethod
+    def _check_precision(cls, value: WeightPrecision) -> WeightPrecision:
+        if value is WeightPrecision.FP16:
+            raise ValueError(
+                "TFLite profiles support fp32 or int8 only: an fp32 model already runs in fp16 on the Android GPU delegate"
+            )
+        return value
+
+
+class TfliteExportConfig(StrictModel):
+    weights: ProjectPath
+    output_dir: ProjectPath
+    calibration_data: ProjectPath
+    """``dataset.yaml`` whose ``val`` images calibrate the int8 profiles."""
+    calibration_fraction: float = Field(gt=0.0, le=1.0)
+    minimum_android_sdk: int = Field(ge=21)
+    profiles: tuple[TfliteProfile, ...] = Field(min_length=1)
 
 
 # ----------------------------------------------------------------------------- root
@@ -224,4 +260,6 @@ class DashcamConfig(StrictModel):
     twinlitenet: TwinLiteNetConfig
     coreml_export: CoremlExportConfig
     twinlitenet_export: TwinLiteNetExportConfig
-    coreml_verify: CoremlVerifyConfig
+    coreml_verify: ExportVerifyConfig
+    tflite_export: TfliteExportConfig
+    tflite_verify: ExportVerifyConfig

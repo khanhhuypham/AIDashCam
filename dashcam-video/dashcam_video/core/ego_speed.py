@@ -1,4 +1,4 @@
-"""Ego-vehicle speed providers (GPS on iPhone; simulated when replaying video)."""
+"""Ego-vehicle speed providers (GPS on the phone; simulated when replaying video)."""
 
 from __future__ import annotations
 

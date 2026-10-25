@@ -66,6 +66,18 @@ def verify_coreml(*, config: DashcamConfig) -> None:
     )
 
 
+def export_tflite(*, config: DashcamConfig) -> None:
+    from dashcam_ml.export.yolo_tflite import export_yolo_tflite
+
+    export_yolo_tflite(config=config.tflite_export)
+
+
+def verify_tflite(*, config: DashcamConfig) -> None:
+    from dashcam_ml.export.verify import verify_tflite_models
+
+    verify_tflite_models(verify_config=config.tflite_verify, models_dir=config.tflite_export.output_dir)
+
+
 COMMAND_HANDLERS: dict[Command, CommandHandler] = {
     Command.PREPARE_BDD100K: prepare_bdd100k,
     Command.EXTRACT_FRAMES: extract_frames,
@@ -75,6 +87,8 @@ COMMAND_HANDLERS: dict[Command, CommandHandler] = {
     Command.EXPORT_COREML: export_coreml,
     Command.EXPORT_TWINLITENET: export_twinlitenet,
     Command.VERIFY_COREML: verify_coreml,
+    Command.EXPORT_TFLITE: export_tflite,
+    Command.VERIFY_TFLITE: verify_tflite,
 }
 
 COMMAND_HELP: dict[Command, str] = {
@@ -83,7 +97,9 @@ COMMAND_HELP: dict[Command, str] = {
     Command.SPLIT_DATASET: "CV09: chia train/val/test theo từng video",
     Command.TRAIN: "CV12: fine-tune YOLO",
     Command.EVALUATE: "CV11: đánh giá nhiều trọng số x kích thước ảnh",
-    Command.EXPORT_COREML: "CV14: xuất YOLO sang Core ML theo các profile",
-    Command.EXPORT_TWINLITENET: "CV14: xuất TwinLiteNet sang Core ML",
+    Command.EXPORT_COREML: "CV14: xuất YOLO sang Core ML (iOS) theo các profile",
+    Command.EXPORT_TWINLITENET: "CV14: xuất TwinLiteNet sang Core ML (iOS)",
     Command.VERIFY_COREML: "CV14: so sánh Core ML với PyTorch (chỉ chạy trên macOS)",
+    Command.EXPORT_TFLITE: "xuất YOLO sang TFLite (Android) theo các profile (Linux/macOS, ví dụ Colab)",
+    Command.VERIFY_TFLITE: "so sánh TFLite với PyTorch (Linux/macOS, ví dụ Colab)",
 }

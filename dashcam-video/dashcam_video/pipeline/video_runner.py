@@ -1,42 +1,35 @@
 """CV04 / CV13 - run detection + tracking + FCW (+ LDW) on a dashcam video.
 
-The AI runs at ``video.ai_fps`` (like the iPhone, which cannot process every frame)
+The AI runs at ``video.ai_fps`` (like a phone, which cannot process every frame)
 while the output video keeps the source frame rate and re-draws the last result.
+This module only handles video in/out; the per-frame logic is in ``dashcam_pipeline``
+and the events file in ``events_writer``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 import numpy.typing as npt
 
-from dashcam_video.config.schema import DashcamConfig
-from dashcam_video.core.class_catalog import ClassCatalog
+from dashcam_video.config.schema import RootConfig
 from dashcam_video.core.ego_speed import EgoSpeedProvider, build_speed_provider
-from dashcam_video.core.fcw import ForwardCollisionWarner
 from dashcam_video.core.geometry import CameraModel
-from dashcam_video.core.ldw import LaneDepartureWarner, LaneSegmentation, estimate_lane_position
-from dashcam_video.core.tracking import IouTracker, Track
-from dashcam_video.domain.entities import Detection, FcwResult, LdwResult
-from dashcam_video.export.ios_config import build_ios_config
-from dashcam_video.detector.yolo_detector import YoloDetector
+from dashcam_video.core.ldw import LaneSegmentation
+from dashcam_video.pipeline.dashcam_pipeline import DashcamPipeline
+from dashcam_video.pipeline.events_writer import write_events_json
 from dashcam_video.pipeline.frame_result import FrameResult
 from dashcam_video.pipeline.renderer import OverlayRenderer
-from dashcam_video.utils.files import write_json
 from dashcam_video.utils.logging_utils import get_logger
-from dashcam_video.utils.runtime import resolve_torch_device
-
-if TYPE_CHECKING:
-    from dashcam_video.detector.twinlitenet import TwinLiteNetSegmenter
 
 LOGGER = get_logger(name=__name__)
 BgrImage = npt.NDArray[np.uint8]
 DEFAULT_FPS: float = 30.0
 QUIT_KEY: str = "q"
+DEBUG_VIDEO_SUFFIX: str = "_debug.mp4"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,58 +42,7 @@ class VideoRunSummary:
     ldw_alerts: int
 
 
-class DashcamPipeline:
-    """One AI step = detect -> track -> FCW, and optionally segment -> LDW."""
-
-    def __init__(self, *, config: DashcamConfig, camera: CameraModel) -> None:
-        catalog: ClassCatalog = ClassCatalog(specs=config.classes)
-        self._config: DashcamConfig = config
-        self._detector: YoloDetector = YoloDetector(config=config.inference, catalog=catalog, device=config.project.device)
-        self._tracker: IouTracker = IouTracker(config=config.tracker)
-        self._fcw: ForwardCollisionWarner | None = (
-            ForwardCollisionWarner(config=config.fcw, catalog=catalog, camera=camera) if config.fcw.enabled else None
-        )
-        self._ldw: LaneDepartureWarner | None = LaneDepartureWarner(config=config.ldw) if config.ldw.enabled else None
-        self._segmenter: TwinLiteNetSegmenter | None = None
-        if config.ldw.enabled:
-            from dashcam_video.detector.twinlitenet import TwinLiteNetSegmenter
-
-            self._segmenter = TwinLiteNetSegmenter(
-                config=config.twinlitenet, device=resolve_torch_device(device=config.project.device)
-            )
-
-    def step(
-        self, *, frame: BgrImage, frame_index: int, timestamp_s: float, ego_speed_kmh: float | None
-    ) -> tuple[FrameResult, LaneSegmentation | None]:
-        detections: list[Detection] = self._detector.detect(frame_bgr=frame)
-        tracks: list[Track] = self._tracker.update(detections=detections, timestamp_s=timestamp_s)
-        fcw_result: FcwResult | None = (
-            self._fcw.update(tracks=tracks, timestamp_s=timestamp_s, ego_speed_kmh=ego_speed_kmh)
-            if self._fcw is not None
-            else None
-        )
-        lanes: LaneSegmentation | None = None
-        ldw_result: LdwResult | None = None
-        if self._segmenter is not None and self._ldw is not None:
-            lanes = self._segmenter.segment(frame_bgr=frame)
-            ldw_result = self._ldw.update(
-                lane_position=estimate_lane_position(lane_mask=lanes.lane_mask, config=self._config.ldw),
-                timestamp_s=timestamp_s,
-                ego_speed_kmh=ego_speed_kmh,
-            )
-        result: FrameResult = FrameResult(
-            frame_index=frame_index,
-            timestamp_s=timestamp_s,
-            ego_speed_kmh=ego_speed_kmh,
-            detections=detections,
-            tracks=[_snapshot_track(track=track) for track in tracks],
-            fcw=fcw_result,
-            ldw=ldw_result,
-        )
-        return result, lanes
-
-
-def run_video(*, config: DashcamConfig) -> VideoRunSummary:
+def run_video(*, config: RootConfig) -> VideoRunSummary:
     video_config = config.video
     capture: cv2.VideoCapture = cv2.VideoCapture(filename=str(video_config.source))
     if not capture.isOpened():
@@ -108,17 +50,16 @@ def run_video(*, config: DashcamConfig) -> VideoRunSummary:
     fps: float = capture.get(propId=cv2.CAP_PROP_FPS) or DEFAULT_FPS
     width: int = int(capture.get(propId=cv2.CAP_PROP_FRAME_WIDTH))
     height: int = int(capture.get(propId=cv2.CAP_PROP_FRAME_HEIGHT))
-    camera: CameraModel = CameraModel(
-        horizontal_fov_deg=config.camera.horizontal_fov_deg,
-        aspect_ratio=width / height
-    )
+    camera: CameraModel = CameraModel(horizontal_fov_deg=config.camera.horizontal_fov_deg, aspect_ratio=width / height)
 
-    pipeline: DashcamPipeline = DashcamPipeline(config=config, camera=camera)
+    pipeline: DashcamPipeline = DashcamPipeline.from_config(config=config, camera=camera)
     speed_provider: EgoSpeedProvider = build_speed_provider(config=config.ego_speed)
     renderer: OverlayRenderer = OverlayRenderer(roi=config.fcw.in_path_roi, show_roi=config.fcw.enabled)
 
     video_config.output_dir.mkdir(parents=True, exist_ok=True)
-    output_video: Path | None = video_config.output_dir / f"{video_config.source.stem}_debug.mp4" if video_config.save_video else None
+    output_video: Path | None = (
+        video_config.output_dir / f"{video_config.source.stem}{DEBUG_VIDEO_SUFFIX}" if video_config.save_video else None
+    )
     writer: cv2.VideoWriter | None = (
         cv2.VideoWriter(
             filename=str(output_video),
@@ -136,7 +77,14 @@ def run_video(*, config: DashcamConfig) -> VideoRunSummary:
     records: list[FrameResult] = []
     last_result: FrameResult | None = None
     last_lanes: LaneSegmentation | None = None
-    LOGGER.info("processing %s (%dx%d @ %.1f fps, AI @ %.1f fps)", video_config.source.name, width, height, fps, video_config.ai_fps)
+    LOGGER.info(
+        "processing %s (%dx%d @ %.1f fps, AI @ %.1f fps)",
+        video_config.source.name,
+        width,
+        height,
+        fps,
+        video_config.ai_fps,
+    )
     try:
         while True:
             ok, frame = capture.read()
@@ -171,24 +119,11 @@ def run_video(*, config: DashcamConfig) -> VideoRunSummary:
         if video_config.display:
             cv2.destroyAllWindows()
 
-    events_json: Path | None = None
-    if video_config.save_events_json:
-        events_json = video_config.output_dir / f"{video_config.source.stem}_events.json"
-        write_json(
-            path=events_json,
-            payload={
-                "meta": {
-                    "source": video_config.source.name,
-                    "frame_width": width,
-                    "frame_height": height,
-                    "fps": fps,
-                    "ai_fps": video_config.ai_fps,
-                    "weights": config.inference.weights.name,
-                    "ios_config": build_ios_config(config=config),
-                },
-                "frames": [record.to_dict() for record in records],
-            },
-        )
+    events_json: Path | None = (
+        write_events_json(config=config, records=records, frame_width=width, frame_height=height, fps=fps)
+        if video_config.save_events_json
+        else None
+    )
     summary: VideoRunSummary = VideoRunSummary(
         output_video=output_video,
         events_json=events_json,
@@ -205,20 +140,6 @@ def run_video(*, config: DashcamConfig) -> VideoRunSummary:
         summary.ldw_alerts,
     )
     return summary
-
-
-def _snapshot_track(*, track: Track) -> Track:
-    """Copy without history so later tracker updates do not mutate stored results."""
-    return Track(
-        track_id=track.track_id,
-        class_name=track.class_name,
-        box=track.box,
-        confidence=track.confidence,
-        hits=track.hits,
-        missed_frames=track.missed_frames,
-        first_seen_s=track.first_seen_s,
-        last_seen_s=track.last_seen_s,
-    )
 
 
 def _log_alerts(*, result: FrameResult) -> None:

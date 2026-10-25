@@ -1,20 +1,23 @@
-"""Export the runtime thresholds as ``DashcamConfig.json`` for the Swift app.
+"""Export the runtime thresholds as ``DashcamConfig.json`` for the mobile apps.
 
+One file per platform in ``app_config_export.targets``: the thresholds are identical,
+only the ``models`` list differs (Core ML models for iOS, TFLite models for Android).
 Keys stay ``snake_case``; decode in Swift with
-``JSONDecoder().keyDecodingStrategy = .convertFromSnakeCase``. The structure must not
-change: the published app reads this file.
+``JSONDecoder().keyDecodingStrategy = .convertFromSnakeCase`` and in Kotlin with a
+snake_case naming strategy. The structure must not change: the published iOS app
+reads this file.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from dashcam_video.config.schema import DashcamConfig
+from dashcam_video.config.schema import AppConfigTarget, RootConfig
 from dashcam_video.utils.files import read_json, write_json
 from dashcam_video.utils.logging_utils import get_logger
 
 LOGGER = get_logger(name=__name__)
-IOS_CONFIG_SCHEMA_VERSION: int = 1
+APP_CONFIG_SCHEMA_VERSION: int = 1
 
 
 def read_manifest_models(*, manifest_path: Path) -> list[object]:
@@ -31,9 +34,9 @@ def read_manifest_models(*, manifest_path: Path) -> list[object]:
     return models
 
 
-def build_ios_config(*, config: DashcamConfig) -> dict[str, object]:
+def build_app_config(*, config: RootConfig, target: AppConfigTarget) -> dict[str, object]:
     return {
-        "schema_version": IOS_CONFIG_SCHEMA_VERSION,
+        "schema_version": APP_CONFIG_SCHEMA_VERSION,
         "camera": config.camera.model_dump(mode="json"),
         "classes": [spec.model_dump(mode="json") for spec in config.classes],
         "inference": config.inference.model_dump(mode="json", include={"conf", "iou", "max_det"}),
@@ -43,12 +46,14 @@ def build_ios_config(*, config: DashcamConfig) -> dict[str, object]:
         "lane_segmenter": config.twinlitenet.model_dump(
             mode="json", include={"input_width", "input_height", "mask_threshold"}
         ),
-        "models": read_manifest_models(manifest_path=config.ios_config_export.models_manifest),
+        "models": read_manifest_models(manifest_path=target.models_manifest),
     }
 
 
-def export_ios_config(*, config: DashcamConfig) -> Path:
-    output_path: Path = config.ios_config_export.output_path
-    write_json(path=output_path, payload=build_ios_config(config=config))
-    LOGGER.info("iOS config written to %s (add it to the Xcode target bundle)", output_path)
-    return output_path
+def export_app_configs(*, config: RootConfig) -> list[Path]:
+    written: list[Path] = []
+    for target in config.app_config_export.targets:
+        write_json(path=target.output_path, payload=build_app_config(config=config, target=target))
+        LOGGER.info("%s config written to %s", target.platform.value, target.output_path)
+        written.append(target.output_path)
+    return written

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from dashcam_video.config.schema import ClassSpec, FcwConfig
 from dashcam_video.core.class_catalog import ClassCatalog
 from dashcam_video.core.debounce import AlertDebouncer, DebounceOutput
-from dashcam_video.core.geometry import CameraModel, estimate_distance_m, is_in_path, reference_box_size
+from dashcam_video.core.geometry import CameraModel
 from dashcam_video.core.tracking import Track
 from dashcam_video.domain.entities import FcwResult
 from dashcam_video.domain.enums import AlertLevel
@@ -84,7 +84,9 @@ class ForwardCollisionWarner:
             self._smoothed_track_id = None
 
         raw_level: AlertLevel = self._raw_level(ttc_s=ttc_s, headway_s=headway_s, ego_speed_kmh=ego_speed_kmh)
-        satisfied: list[AlertLevel] = [level for level in (AlertLevel.CAUTION, AlertLevel.CRITICAL) if raw_level >= level]
+        satisfied: list[AlertLevel] = [
+            level for level in (AlertLevel.CAUTION, AlertLevel.CRITICAL) if raw_level >= level
+        ]
         debounced: DebounceOutput[AlertLevel] = self._debouncer.update(raw_states=satisfied, timestamp_s=timestamp_s)
         return FcwResult(
             lead_track_id=lead.track.track_id if lead is not None else None,
@@ -102,9 +104,9 @@ class ForwardCollisionWarner:
         best_key: tuple[float, float] | None = None
         for track in tracks:
             spec: ClassSpec | None = self._catalog.lookup(class_name=track.class_name)
-            if spec is None or not is_in_path(box=track.box, roi=self._config.in_path_roi):
+            if spec is None or not self._config.in_path_roi.contains(box=track.box):
                 continue
-            distance_m: float | None = estimate_distance_m(box=track.box, spec=spec, camera=self._camera)
+            distance_m: float | None = self._camera.estimate_distance_m(box=track.box, spec=spec)
             if distance_m is not None and distance_m > self._config.max_distance_m:
                 continue
             key: tuple[float, float] = (
@@ -119,7 +121,7 @@ class ForwardCollisionWarner:
     def _lead_ttc_s(self, *, lead: _LeadCandidate, now_s: float) -> float | None:
         window_start_s: float = now_s - self._config.ttc_window_s
         samples: list[tuple[float, float]] = [
-            (sample_s, reference_box_size(box=box, spec=lead.spec))
+            (sample_s, box.size_along(dimension=lead.spec.reference_dimension))
             for sample_s, box in lead.track.history
             if sample_s >= window_start_s
         ]

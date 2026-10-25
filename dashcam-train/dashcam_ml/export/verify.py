@@ -1,7 +1,8 @@
-"""CV14 - check that exported Core ML models match PyTorch on the same images.
+"""CV14 - check that exported models (Core ML for iOS, TFLite for Android) match PyTorch.
 
-Must run on macOS (Core ML can only execute on Apple platforms). Both backends get
-the *same* letterboxed image, so any difference comes from conversion/precision.
+Core ML can only execute on macOS; TFLite (LiteRT) on Linux x86-64 or macOS. Both
+backends get the *same* letterboxed image, so any difference comes from
+conversion/precision.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-from dashcam_ml.config.schema import CoremlVerifyConfig, TwinLiteNetConfig
+from dashcam_ml.config.schema import ExportVerifyConfig, TwinLiteNetConfig
 from dashcam_ml.domain.entities import BoundingBox, Detection
 from dashcam_ml.domain.enums import ModelKind
 from dashcam_ml.export.comparison import (
@@ -27,7 +28,7 @@ from dashcam_ml.export.manifest import ModelManifestEntry, read_manifest
 from dashcam_ml.export.twinlitenet_coreml import DRIVABLE_OUTPUT_NAME, INPUT_NAME, LANE_OUTPUT_NAME
 from dashcam_ml.utils.files import iter_images, write_json
 from dashcam_ml.utils.logging_utils import get_logger
-from dashcam_ml.utils.runtime import require_macos
+from dashcam_ml.utils.runtime import require_litert_platform, require_macos
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PilImage
@@ -42,7 +43,7 @@ class DetectorVerification:
     model_name: str
     images: int
     reference_boxes: int
-    coreml_boxes: int
+    exported_boxes: int
     matched_boxes: int
     match_rate: float
     mean_iou: float
@@ -80,12 +81,34 @@ def letterbox(*, image: BgrImage, height: int, width: int) -> BgrImage:
 
 
 def verify_coreml_models(
-    *, verify_config: CoremlVerifyConfig, models_dir: Path, twinlitenet_config: TwinLiteNetConfig
+    *, verify_config: ExportVerifyConfig, models_dir: Path, twinlitenet_config: TwinLiteNetConfig
 ) -> Path:
     require_macos(action="verify-coreml")
+    return _verify_models(
+        verify_config=verify_config,
+        models_dir=models_dir,
+        twinlitenet_config=twinlitenet_config,
+        export_command="export-coreml",
+    )
+
+
+def verify_tflite_models(*, verify_config: ExportVerifyConfig, models_dir: Path) -> Path:
+    require_litert_platform(action="verify-tflite")
+    return _verify_models(
+        verify_config=verify_config, models_dir=models_dir, twinlitenet_config=None, export_command="export-tflite"
+    )
+
+
+def _verify_models(
+    *,
+    verify_config: ExportVerifyConfig,
+    models_dir: Path,
+    twinlitenet_config: TwinLiteNetConfig | None,
+    export_command: str,
+) -> Path:
     entries: list[ModelManifestEntry] = read_manifest(output_dir=models_dir)
     if not entries:
-        raise FileNotFoundError(f"no manifest.json in {models_dir}; run export-coreml first")
+        raise FileNotFoundError(f"no manifest.json in {models_dir}; run {export_command} first")
     images: list[Path] = list(iter_images(directory=verify_config.images_dir))[: verify_config.max_images]
     if not images:
         raise FileNotFoundError(f"no images under {verify_config.images_dir}")
@@ -100,6 +123,8 @@ def verify_coreml_models(
                     _verify_detector(entry=entry, model_path=model_path, images=images, config=verify_config)
                 )
             case ModelKind.LANE_SEGMENTER:
+                if twinlitenet_config is None:
+                    raise ValueError(f"{entry.name}: lane segmenters are only verified as Core ML")
                 segmenter_reports.append(
                     _verify_segmenter(entry=entry, model_path=model_path, images=images, config=twinlitenet_config)
                 )
@@ -127,14 +152,19 @@ def verify_coreml_models(
 
 
 def _verify_detector(
-    *, entry: ModelManifestEntry, model_path: Path, images: list[Path], config: CoremlVerifyConfig
+    *, entry: ModelManifestEntry, model_path: Path, images: list[Path], config: ExportVerifyConfig
 ) -> DetectorVerification:
-    import coremltools as ct
     from ultralytics import YOLO
 
     reference_model: YOLO = YOLO(model=str(config.pytorch_weights))
-    coreml_pipeline = ct.models.MLModel(model=str(model_path)) if entry.includes_nms else None
-    coreml_yolo: YOLO | None = None if entry.includes_nms else YOLO(model=str(model_path), task="detect")
+    coreml_pipeline: object | None = None
+    exported_yolo: YOLO | None = None
+    if entry.includes_nms:  # Core ML NMS pipeline: run it through coremltools directly
+        import coremltools as ct
+
+        coreml_pipeline = ct.models.MLModel(model=str(model_path))
+    else:  # raw outputs (TFLite, or Core ML without NMS): Ultralytics loads the file and adds NMS
+        exported_yolo = YOLO(model=str(model_path), task="detect")
     comparisons: list[DetectionComparison] = []
     for image_path in images:
         frame: BgrImage = cv2.imread(filename=str(image_path))
@@ -145,7 +175,7 @@ def _verify_detector(
         candidate: list[Detection] = (
             _predict_coreml_pipeline(model=coreml_pipeline, image=boxed, entry=entry, config=config)
             if coreml_pipeline is not None
-            else _predict_ultralytics(model=coreml_yolo, image=boxed, entry=entry, config=config)
+            else _predict_ultralytics(model=exported_yolo, image=boxed, entry=entry, config=config)
         )
         comparisons.append(
             compare_detections(
@@ -159,7 +189,7 @@ def _verify_detector(
         model_name=entry.name,
         images=len(images),
         reference_boxes=reference_total,
-        coreml_boxes=sum(item.candidate_count for item in comparisons),
+        exported_boxes=sum(item.candidate_count for item in comparisons),
         matched_boxes=matched_total,
         match_rate=matched_total / reference_total if reference_total > 0 else 1.0,
         mean_iou=float(np.mean(a=[item.mean_iou for item in matched_items])) if matched_items else 0.0,
@@ -170,7 +200,7 @@ def _verify_detector(
 
 
 def _predict_ultralytics(
-    *, model: object, image: BgrImage, entry: ModelManifestEntry, config: CoremlVerifyConfig
+    *, model: object, image: BgrImage, entry: ModelManifestEntry, config: ExportVerifyConfig
 ) -> list[Detection]:
     results = model.predict(  # type: ignore[attr-defined]
         source=image,
@@ -195,7 +225,7 @@ def _predict_ultralytics(
 
 
 def _predict_coreml_pipeline(
-    *, model: object, image: BgrImage, entry: ModelManifestEntry, config: CoremlVerifyConfig
+    *, model: object, image: BgrImage, entry: ModelManifestEntry, config: ExportVerifyConfig
 ) -> list[Detection]:
     """Core ML NMS pipeline: ``coordinates`` = normalised (cx, cy, w, h); ``confidence`` = (N, classes)."""
     spec_inputs: set[str] = {item.name for item in model.get_spec().description.input}  # type: ignore[attr-defined]

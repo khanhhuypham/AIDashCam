@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dashcam_ml.config.schema import TwinLiteNetConfig, TwinLiteNetExportConfig
 from dashcam_ml.domain.enums import ModelKind, WeightPrecision
-from dashcam_ml.export.manifest import ModelManifestEntry, upsert_manifest
+from dashcam_ml.export.manifest import IOS_MANIFEST_HEADER, ModelManifestEntry, upsert_manifest
 from dashcam_ml.export.yolo_coreml import MLPACKAGE_SUFFIX
 from dashcam_ml.utils.files import remove_path
 from dashcam_ml.utils.logging_utils import get_logger
@@ -73,4 +73,4 @@ def export_twinlitenet_coreml(*, model_config: TwinLiteNetConfig, export_config:
         input_names=[INPUT_NAME],
         output_names=[DRIVABLE_OUTPUT_NAME, LANE_OUTPUT_NAME],
     )
-    return upsert_manifest(output_dir=export_config.output_dir, entries=[entry])
+    return upsert_manifest(output_dir=export_config.output_dir, entries=[entry], header=IOS_MANIFEST_HEADER)

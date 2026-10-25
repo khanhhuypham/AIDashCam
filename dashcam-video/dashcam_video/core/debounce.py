@@ -59,9 +59,7 @@ class AlertDebouncer(Generic[StateT]):
 
         alert_triggered: bool = False
         if active_rank >= 0:
-            cooldown_over: bool = (
-                self._last_alert_s is None or timestamp_s - self._last_alert_s >= self._cooldown_s
-            )
+            cooldown_over: bool = self._last_alert_s is None or timestamp_s - self._last_alert_s >= self._cooldown_s
             if cooldown_over or active_rank > self._last_alert_rank:
                 alert_triggered = True
                 self._last_alert_s = timestamp_s

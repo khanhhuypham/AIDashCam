@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from dashcam_video.config.schema import DashcamConfig
+from dashcam_video.config.schema import RootConfig
 from dashcam_video.core.class_catalog import ClassCatalog
 from dashcam_video.core.fcw import ForwardCollisionWarner, estimate_ttc_s
-from dashcam_video.core.geometry import CameraModel, estimate_distance_m, is_in_path
+from dashcam_video.core.geometry import CameraModel
 from dashcam_video.core.tracking import IouTracker, Track
 from dashcam_video.domain.entities import BoundingBox, Detection, FcwResult
 from dashcam_video.domain.enums import AlertLevel
@@ -31,20 +31,20 @@ def test_ttc_is_none_when_not_approaching() -> None:
     assert estimate_ttc_s(samples=[(0.0, 1.0), (0.1, 1.0), (0.2, 0.99)]) is None
 
 
-def test_distance_estimate_round_trip(config: DashcamConfig) -> None:
+def test_distance_estimate_round_trip(config: RootConfig) -> None:
     spec = ClassCatalog(specs=config.classes).lookup(class_name="car")
     assert spec is not None
-    distance: float | None = estimate_distance_m(box=_lead_car_box(distance_m=20.0), spec=spec, camera=CAMERA)
+    distance: float | None = CAMERA.estimate_distance_m(box=_lead_car_box(distance_m=20.0), spec=spec)
     assert distance == pytest.approx(expected=20.0, rel=1e-6)
 
 
-def test_in_path_roi(config: DashcamConfig) -> None:
+def test_in_path_roi(config: RootConfig) -> None:
     roi = config.fcw.in_path_roi
-    assert is_in_path(box=BoundingBox(x1=0.45, y1=0.6, x2=0.55, y2=0.8), roi=roi)
-    assert not is_in_path(box=BoundingBox(x1=0.0, y1=0.6, x2=0.1, y2=0.8), roi=roi)
+    assert roi.contains(box=BoundingBox(x1=0.45, y1=0.6, x2=0.55, y2=0.8))
+    assert not roi.contains(box=BoundingBox(x1=0.0, y1=0.6, x2=0.1, y2=0.8))
 
 
-def _simulate(*, config: DashcamConfig, closing_speed_mps: float, ego_speed_kmh: float) -> list[FcwResult]:
+def _simulate(*, config: RootConfig, closing_speed_mps: float, ego_speed_kmh: float) -> list[FcwResult]:
     tracker: IouTracker = IouTracker(config=config.tracker)
     warner: ForwardCollisionWarner = ForwardCollisionWarner(
         config=config.fcw, catalog=ClassCatalog(specs=config.classes), camera=CAMERA
@@ -60,18 +60,18 @@ def _simulate(*, config: DashcamConfig, closing_speed_mps: float, ego_speed_kmh:
     return results
 
 
-def test_fast_approach_triggers_critical_once_per_cooldown(config: DashcamConfig) -> None:
+def test_fast_approach_triggers_critical_once_per_cooldown(config: RootConfig) -> None:
     results: list[FcwResult] = _simulate(config=config, closing_speed_mps=10.0, ego_speed_kmh=50.0)
     assert any(result.active_level is AlertLevel.CRITICAL for result in results)
     triggered: list[FcwResult] = [result for result in results if result.alert_triggered]
     assert 1 <= len(triggered) <= 2  # at most CAUTION then an escalation to CRITICAL
 
 
-def test_constant_distance_does_not_alert(config: DashcamConfig) -> None:
+def test_constant_distance_does_not_alert(config: RootConfig) -> None:
     results: list[FcwResult] = _simulate(config=config, closing_speed_mps=0.0, ego_speed_kmh=20.0)
     assert all(result.active_level is AlertLevel.NONE for result in results)
 
 
-def test_low_ego_speed_suppresses_alerts(config: DashcamConfig) -> None:
+def test_low_ego_speed_suppresses_alerts(config: RootConfig) -> None:
     results: list[FcwResult] = _simulate(config=config, closing_speed_mps=10.0, ego_speed_kmh=5.0)
     assert not any(result.alert_triggered for result in results)

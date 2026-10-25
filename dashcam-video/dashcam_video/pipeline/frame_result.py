@@ -1,4 +1,4 @@
-"""Per-AI-frame record: inputs + outputs of the logic, serialised for Swift parity tests."""
+"""Per-AI-frame record: inputs + outputs of the logic, serialised for Swift / Kotlin parity tests."""
 
 from __future__ import annotations
 
