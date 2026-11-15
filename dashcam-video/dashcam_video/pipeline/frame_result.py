@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dashcam_video.core.tracking import Track
 from dashcam_video.domain.entities import Detection, FcwResult, JsonDict, LdwResult
@@ -17,6 +17,8 @@ class FrameResult:
     tracks: list[Track]
     fcw: FcwResult | None
     ldw: LdwResult | None
+    overlay_detections: list[Detection] = field(default_factory=list)
+    """Drawn on the debug video only; deliberately left out of :meth:`to_dict` (``events.json``)."""
 
     def to_dict(self) -> JsonDict:
         return {

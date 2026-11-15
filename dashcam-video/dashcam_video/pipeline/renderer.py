@@ -1,4 +1,4 @@
-"""Debug overlay drawn on each video frame (boxes, ROI, lane masks, HUD, alerts)."""
+"""Debug overlay drawn on each video frame (boxes, ROI, lane masks, traffic signs/lights, HUD, alerts)."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ class Palette(Enum):
     CAUTION = (0, 165, 255)
     CRITICAL = (0, 0, 230)
     HUD_BACKGROUND = (30, 30, 30)
+    OVERLAY_ONLY = (255, 0, 255)
 
     @property
     def bgr(self) -> BgrColor:
@@ -50,6 +51,7 @@ class OverlayRenderer:
         if self._show_roi:
             self._draw_roi(canvas=canvas)
         if result is not None:
+            self._draw_overlay_detections(canvas=canvas, result=result)
             self._draw_tracks(canvas=canvas, result=result)
             self._draw_hud(canvas=canvas, result=result)
         return canvas
@@ -95,6 +97,23 @@ class OverlayRenderer:
                 fontFace=FONT,
                 fontScale=0.45,
                 color=color.bgr,
+                thickness=1,
+                lineType=cv2.LINE_AA,
+            )
+
+    def _draw_overlay_detections(self, *, canvas: BgrImage, result: FrameResult) -> None:
+        """Classes in ``video.overlay_classes`` (traffic signs, lights): thin box, no track ID."""
+        height, width = canvas.shape[:2]
+        for detection in result.overlay_detections:
+            x1, y1, x2, y2 = detection.box.to_pixels(frame_width=width, frame_height=height)
+            cv2.rectangle(img=canvas, pt1=(x1, y1), pt2=(x2, y2), color=Palette.OVERLAY_ONLY.bgr, thickness=1)
+            cv2.putText(
+                img=canvas,
+                text=f"{detection.class_name} {detection.confidence:.2f}",
+                org=(x1, max(12, y1 - 4)),
+                fontFace=FONT,
+                fontScale=0.4,
+                color=Palette.OVERLAY_ONLY.bgr,
                 thickness=1,
                 lineType=cv2.LINE_AA,
             )

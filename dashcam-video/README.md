@@ -28,7 +28,7 @@ dashcam-video/
 ├── pyproject.toml              # thư viện cần cài + cấu hình pytest và ruff (định dạng code)
 ├── requirements.txt            # chỉ trỏ tới pyproject.toml (pip install -r requirements.txt)
 ├── dashcam_video/
-│   ├── __main__.py             # python -m dashcam_video <command>
+│   ├── __main__.py             # python -m dashcam_video <command>: đọc tham số (argparse), gọi handler
 │   ├── domain/                 # (1) Không phụ thuộc thư viện ngoài
 │   │   ├── enums.py            #     AlertLevel, LaneDepartureSide, EgoSpeedSource, Command...
 │   │   └── entities.py         #     BoundingBox, Detection, FcwResult, LdwResult...
@@ -51,7 +51,7 @@ dashcam-video/
 │   │   ├── events_writer.py    #     ghi <video>_events.json (dữ liệu test cho Swift / Kotlin)
 │   │   ├── renderer.py         #     vẽ box, ROI, HUD, cảnh báo lên khung hình
 │   │   └── frame_result.py     #     kết quả một khung AI
-│   ├── cli/                    # (6) argparse, mỗi Command một handler
+│   ├── cli/                    # (6) commands.py: mỗi Command một handler
 │   └── utils/                  #     logging, file, device
 └── tests/                      # pytest cho config + core + pipeline (detector giả, không cần mô hình)
 ```
@@ -126,7 +126,7 @@ python -m dashcam_video run
 - AI chạy ở `video.ai_fps` (mặc định 10 FPS) để giả lập điện thoại yếu (iPhone 8, Android tầm thấp).
 - Tốc độ xe lấy từ `ego_speed:`. Có thể dùng hằng số, hoặc một file CSV `timestamp_s,speed_kmh` xuất từ GPS.
 - Kết quả trong `outputs/video/`:
-  - `<video>_debug.mp4`: box, ID track, vùng làn xe (hình thang), HUD khoảng cách/TTC/headway, banner cảnh báo.
+  - `<video>_debug.mp4`: box, ID track, vùng làn xe (hình thang), HUD khoảng cách/TTC/headway, banner cảnh báo. Biển báo và đèn giao thông (`video.overlay_classes`) được vẽ khung tím mỏng để xem mô hình nhận ra: chúng không được theo dõi, không gây cảnh báo và không có trong `events.json` / `DashcamConfig.json`. Mô hình chỉ biết "có biển báo", chưa đọc được nội dung biển.
   - `<video>_events.json`: đầu vào và đầu ra của logic ở từng khung AI, kèm toàn bộ ngưỡng. File này là **dữ liệu test cho bản Swift và Kotlin** (khóa `meta.ios_config` giữ tên cũ; ngưỡng trong đó dùng chung cho cả hai app).
 
 **Logic FCW** (`core/fcw.py`):

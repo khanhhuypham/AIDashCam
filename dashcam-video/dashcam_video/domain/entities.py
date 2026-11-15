@@ -71,11 +71,7 @@ class Detection:
     confidence: float
 
     def to_dict(self) -> JsonDict:
-        return {
-            "box": self.box.to_dict(),
-            "class_name": self.class_name,
-            "confidence": round(self.confidence, 4)
-        }
+        return {"box": self.box.to_dict(), "class_name": self.class_name, "confidence": round(self.confidence, 4)}
 
 
 @dataclass(frozen=True, slots=True)

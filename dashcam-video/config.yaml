@@ -91,6 +91,9 @@ video:
     save_events_json: true         # file JSON dùng làm dữ liệu test cho bản Swift / Kotlin
     display: false                 # true = mở cửa sổ xem trực tiếp (bấm q để thoát)
     output_codec: mp4v
+    # Lớp chỉ vẽ lên video debug để xem mô hình nhận ra (khung tím). Không theo dõi, không cảnh báo,
+    # không ghi vào events.json / DashcamConfig.json. [] = không vẽ.
+    overlay_classes: [traffic light, traffic sign]
 
 # Tracker IoU đơn giản, cố ý viết để dễ chuyển sang Swift / Kotlin
 tracker:

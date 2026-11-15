@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -30,12 +31,17 @@ def export_app_config(*, config: RootConfig) -> None:
     LOGGER.info("copy each DashcamConfig.json into its app project (Xcode / Android Studio): %d files", len(written))
 
 
-COMMAND_HANDLERS: dict[Command, CommandHandler] = {
-    Command.RUN: run,
-    Command.EXPORT_APP_CONFIG: export_app_config,
-}
+@dataclass(frozen=True, slots=True)
+class CommandSpec:
+    """What one CLI command runs and the text ``--help`` shows for it."""
 
-COMMAND_HELP: dict[Command, str] = {
-    Command.RUN: "chạy detect + tracking + FCW (+ LDW) trên video",
-    Command.EXPORT_APP_CONFIG: "xuất ngưỡng cảnh báo ra DashcamConfig.json cho app iOS và app Android",
+    handler: CommandHandler
+    help: str
+
+
+COMMANDS: dict[Command, CommandSpec] = {
+    Command.RUN: CommandSpec(handler=run, help="chạy detect + tracking + FCW (+ LDW) trên video"),
+    Command.EXPORT_APP_CONFIG: CommandSpec(
+        handler=export_app_config, help="xuất ngưỡng cảnh báo ra DashcamConfig.json cho app iOS và app Android"
+    ),
 }

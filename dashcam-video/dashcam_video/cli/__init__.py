@@ -1,1 +1,1 @@
-"""CLI layer: argument parsing and command dispatch."""
+"""CLI command handlers: one per :class:`Command` (argument parsing is in ``__main__.py``)."""

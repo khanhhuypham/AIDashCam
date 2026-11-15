@@ -1,5 +1,9 @@
 """One AI step on one frame: detect -> track -> FCW, and optionally segment -> LDW.
 
+Only classes listed in ``classes`` go to the tracker and the warnings. Classes in
+``video.overlay_classes`` (traffic lights, signs) are kept aside for the debug video, so
+they never take a track ID or appear in ``events.json``.
+
 This is the part the iOS and Android apps re-implement. The detector and the lane
 segmenter are passed in (anything with ``detect`` / ``segment``), so tests can feed
 fixed detections without loading a model.
@@ -44,6 +48,8 @@ class DashcamPipeline:
     ) -> None:
         catalog: ClassCatalog = ClassCatalog(specs=config.classes)
         self._config: RootConfig = config
+        self._catalog: ClassCatalog = catalog
+        self._overlay_classes: frozenset[str] = frozenset(name.strip().lower() for name in config.video.overlay_classes)
         self._detector: Detector = detector
         self._lane_segmenter: LaneSegmenter | None = lane_segmenter
         self._tracker: IouTracker = IouTracker(config=config.tracker)
@@ -61,30 +67,26 @@ class DashcamPipeline:
         """
         from dashcam_video.perception.yolo_detector import YoloDetector
 
-        detector: YoloDetector = YoloDetector(
-            config=config.inference,
-            catalog=ClassCatalog(specs=config.classes),
-            device=config.project.device
-        )
+        detector: YoloDetector = YoloDetector(config=config.inference, device=config.project.device)
         lane_segmenter: LaneSegmenter | None = None
         if config.ldw.enabled:
             from dashcam_video.perception.lane_segmenter import TwinLiteNetSegmenter
 
             lane_segmenter = TwinLiteNetSegmenter(
-                config=config.twinlitenet,
-                device=resolve_torch_device(device=config.project.device)
+                config=config.twinlitenet, device=resolve_torch_device(device=config.project.device)
             )
-        return cls(
-            config=config,
-            camera=camera,
-            detector=detector,
-            lane_segmenter=lane_segmenter
-        )
+        return cls(config=config, camera=camera, detector=detector, lane_segmenter=lane_segmenter)
 
     def step(
         self, *, frame: BgrImage, frame_index: int, timestamp_s: float, ego_speed_kmh: float | None
     ) -> tuple[FrameResult, LaneSegmentation | None]:
-        detections: list[Detection] = self._detector.detect(frame_bgr=frame)
+        all_detections: list[Detection] = self._detector.detect(frame_bgr=frame)
+        detections: list[Detection] = [
+            detection for detection in all_detections if self._catalog.contains(class_name=detection.class_name)
+        ]
+        overlay_detections: list[Detection] = [
+            detection for detection in all_detections if detection.class_name.strip().lower() in self._overlay_classes
+        ]
         tracks: list[Track] = self._tracker.update(detections=detections, timestamp_s=timestamp_s)
         fcw_result: FcwResult | None = (
             self._fcw.update(tracks=tracks, timestamp_s=timestamp_s, ego_speed_kmh=ego_speed_kmh)
@@ -108,5 +110,6 @@ class DashcamPipeline:
             tracks=[track.snapshot() for track in tracks],
             fcw=fcw_result,
             ldw=ldw_result,
+            overlay_detections=overlay_detections,
         )
         return result, lanes

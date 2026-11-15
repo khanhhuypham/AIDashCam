@@ -35,7 +35,8 @@ def write_events_json(
                 "weights": config.inference.weights.name,
                 # key kept as "ios_config" for existing Swift parity tests; thresholds are the same on Android
                 "ios_config": build_app_config(
-                    config=config, target=config.app_config_export.target(platform=Platform.IOS)
+                    config=config,
+                    target=config.app_config_export.target(platform=Platform.IOS)
                 ),
             },
             "frames": [record.to_dict() for record in records],

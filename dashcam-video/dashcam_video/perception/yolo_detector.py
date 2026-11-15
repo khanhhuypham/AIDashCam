@@ -1,4 +1,8 @@
-"""Adapter from Ultralytics YOLO to the framework-free :class:`Detection` type."""
+"""Adapter from Ultralytics YOLO to the framework-free :class:`Detection` type.
+
+Returns every class the model knows; the pipeline decides which ones are used for warnings
+(``classes``) and which are only drawn (``video.overlay_classes``).
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,6 @@ import numpy as np
 import numpy.typing as npt
 
 from dashcam_video.config.schema import ImageSize, InferenceConfig
-from dashcam_video.core.class_catalog import ClassCatalog
 from dashcam_video.domain.entities import BoundingBox, Detection
 from dashcam_video.domain.enums import WeightPrecision
 from dashcam_video.utils.runtime import resolve_device
@@ -25,11 +28,10 @@ QUANTIZE_BITS: dict[WeightPrecision, int | None] = {
 
 
 class YoloDetector:
-    def __init__(self, *, config: InferenceConfig, catalog: ClassCatalog, device: str) -> None:
+    def __init__(self, *, config: InferenceConfig, device: str) -> None:
         from ultralytics import YOLO
 
         self._config: InferenceConfig = config
-        self._catalog: ClassCatalog = catalog
         self._device: str | None = resolve_device(device=device)
         self._precision_kwargs: dict[str, object] = self._ultralytics_precision_kwargs(precision=config.precision)
         self._model: YOLO = YOLO(model=str(config.weights))
@@ -53,7 +55,7 @@ class YoloDetector:
         return imgsz if isinstance(imgsz, int) else [imgsz[0], imgsz[1]]
 
     def detect(self, *, frame_bgr: BgrImage) -> list[Detection]:
-        """Run the model on one frame; keep only classes listed in ``config.classes``."""
+        """Run the model on one frame; all classes, normalised boxes."""
         results = self._model.predict(
             source=frame_bgr,
             imgsz=self._ultralytics_imgsz(imgsz=self._config.imgsz),
@@ -72,8 +74,6 @@ class YoloDetector:
         detections: list[Detection] = []
         for (x1, y1, x2, y2), class_id, confidence in zip(coordinates, class_ids, confidences, strict=True):
             class_name: str = self._class_names[int(class_id)]
-            if not self._catalog.contains(class_name=class_name):
-                continue
             detections.append(
                 Detection(
                     box=BoundingBox(x1=float(x1), y1=float(y1), x2=float(x2), y2=float(y2)),

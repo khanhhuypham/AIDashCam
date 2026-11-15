@@ -73,3 +73,19 @@ def test_pipeline_output_is_deterministic(config: RootConfig) -> None:
         result.to_dict() for result in _run(config=config, frames=frames, ego_speed_kmh=40.0)
     ]
     assert first == second
+
+
+def test_traffic_signs_are_only_drawn_not_tracked(config: RootConfig) -> None:
+    assert "traffic sign" in config.video.overlay_classes
+    sign: Detection = Detection(
+        box=BoundingBox(x1=0.8, y1=0.2, x2=0.85, y2=0.28), class_name="traffic sign", confidence=0.7
+    )
+    frames: list[list[Detection]] = [[*cars, sign] for cars in _approaching_car(steps=10, closing_speed_mps=5.0)]
+    with_sign: list[FrameResult] = _run(config=config, frames=frames, ego_speed_kmh=40.0)
+    without_sign: list[FrameResult] = _run(
+        config=config, frames=_approaching_car(steps=10, closing_speed_mps=5.0), ego_speed_kmh=40.0
+    )
+    assert all(result.overlay_detections == [sign] for result in with_sign)
+    assert all(track.class_name == "car" for result in with_sign for track in result.tracks)
+    # events.json content is exactly the same as if the sign had not been detected
+    assert [result.to_dict() for result in with_sign] == [result.to_dict() for result in without_sign]

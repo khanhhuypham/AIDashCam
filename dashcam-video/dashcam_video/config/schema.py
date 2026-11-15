@@ -120,6 +120,9 @@ class VideoConfig(StrictModel):
     save_events_json: bool = True
     display: bool = False
     output_codec: str = Field(default="mp4v", min_length=4, max_length=4)
+    overlay_classes: tuple[str, ...] = ()
+    """Model classes only drawn on the debug video (e.g. traffic signs): not tracked, not warned on,
+    not written to ``events.json`` or ``DashcamConfig.json``."""
 
 
 class TrackerConfig(StrictModel):

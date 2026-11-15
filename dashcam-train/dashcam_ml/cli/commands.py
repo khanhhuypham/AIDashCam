@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol
 
 from dashcam_ml.config.schema import DashcamConfig
@@ -78,28 +79,33 @@ def verify_tflite(*, config: DashcamConfig) -> None:
     verify_tflite_models(verify_config=config.tflite_verify, models_dir=config.tflite_export.output_dir)
 
 
-COMMAND_HANDLERS: dict[Command, CommandHandler] = {
-    Command.PREPARE_BDD100K: prepare_bdd100k,
-    Command.EXTRACT_FRAMES: extract_frames,
-    Command.SPLIT_DATASET: split_dataset,
-    Command.TRAIN: train,
-    Command.EVALUATE: evaluate,
-    Command.EXPORT_COREML: export_coreml,
-    Command.EXPORT_TWINLITENET: export_twinlitenet,
-    Command.VERIFY_COREML: verify_coreml,
-    Command.EXPORT_TFLITE: export_tflite,
-    Command.VERIFY_TFLITE: verify_tflite,
-}
+@dataclass(frozen=True, slots=True)
+class CommandSpec:
+    """What one CLI command runs and the text ``--help`` shows for it."""
 
-COMMAND_HELP: dict[Command, str] = {
-    Command.PREPARE_BDD100K: "CV02: chuyển nhãn BDD100K sang định dạng YOLO",
-    Command.EXTRACT_FRAMES: "CV08: trích khung hình từ video tự quay",
-    Command.SPLIT_DATASET: "CV09: chia train/val/test theo từng video",
-    Command.TRAIN: "CV12: fine-tune YOLO",
-    Command.EVALUATE: "CV11: đánh giá nhiều trọng số x kích thước ảnh",
-    Command.EXPORT_COREML: "CV14: xuất YOLO sang Core ML (iOS) theo các profile",
-    Command.EXPORT_TWINLITENET: "CV14: xuất TwinLiteNet sang Core ML (iOS)",
-    Command.VERIFY_COREML: "CV14: so sánh Core ML với PyTorch (chỉ chạy trên macOS)",
-    Command.EXPORT_TFLITE: "xuất YOLO sang TFLite (Android) theo các profile (Linux/macOS, ví dụ Colab)",
-    Command.VERIFY_TFLITE: "so sánh TFLite với PyTorch (Linux/macOS, ví dụ Colab)",
+    handler: CommandHandler
+    help: str
+
+
+COMMANDS: dict[Command, CommandSpec] = {
+    Command.PREPARE_BDD100K: CommandSpec(handler=prepare_bdd100k, help="CV02: chuyển nhãn BDD100K sang định dạng YOLO"),
+    Command.EXTRACT_FRAMES: CommandSpec(handler=extract_frames, help="CV08: trích khung hình từ video tự quay"),
+    Command.SPLIT_DATASET: CommandSpec(handler=split_dataset, help="CV09: chia train/val/test theo từng video"),
+    Command.TRAIN: CommandSpec(handler=train, help="CV12: fine-tune YOLO"),
+    Command.EVALUATE: CommandSpec(handler=evaluate, help="CV11: đánh giá nhiều trọng số x kích thước ảnh"),
+    Command.EXPORT_COREML: CommandSpec(
+        handler=export_coreml, help="CV14: xuất YOLO sang Core ML (iOS) theo các profile"
+    ),
+    Command.EXPORT_TWINLITENET: CommandSpec(
+        handler=export_twinlitenet, help="CV14: xuất TwinLiteNet sang Core ML (iOS)"
+    ),
+    Command.VERIFY_COREML: CommandSpec(
+        handler=verify_coreml, help="CV14: so sánh Core ML với PyTorch (chỉ chạy trên macOS)"
+    ),
+    Command.EXPORT_TFLITE: CommandSpec(
+        handler=export_tflite, help="xuất YOLO sang TFLite (Android) theo các profile (Linux/macOS, ví dụ Colab)"
+    ),
+    Command.VERIFY_TFLITE: CommandSpec(
+        handler=verify_tflite, help="so sánh TFLite với PyTorch (Linux/macOS, ví dụ Colab)"
+    ),
 }

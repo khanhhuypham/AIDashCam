@@ -42,7 +42,7 @@ dashcam-train/
 ├── config.yaml                 # TOÀN BỘ cấu hình (đường dẫn, tham số train, profile export)
 ├── requirements.txt
 ├── dashcam_ml/
-│   ├── __main__.py             # python -m dashcam_ml <command>
+│   ├── __main__.py             # python -m dashcam_ml <command>: đọc tham số (argparse), gọi handler
 │   ├── domain/                 # (1) Không phụ thuộc thư viện ngoài
 │   │   ├── enums.py            #     mọi Enum: CopyMode, WeightPrecision, ModelKind, Command...
 │   │   └── entities.py         #     BoundingBox, Detection (dùng khi so mô hình xuất ra với PyTorch)
@@ -52,7 +52,7 @@ dashcam-train/
 │   ├── data/                   # (4) BDD100K -> YOLO, trích khung hình, chia tập, remap lớp
 │   ├── training/               # (4) train, evaluate
 │   ├── export/                 # (4) Core ML (iOS), TFLite (Android), manifest, kiểm tra
-│   ├── cli/                    # (5) argparse, mỗi Command một handler
+│   ├── cli/                    # (5) commands.py: mỗi Command một handler
 │   └── utils/                  #     logging, file, device/platform
 ├── docs/                       # kế hoạch, ghi chú
 └── tests/                      # pytest cho config + data
